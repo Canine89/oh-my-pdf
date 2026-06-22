@@ -1,9 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>oh-my-pdf</title>
     <link>https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/appcast.xml</link>
     <description>oh-my-pdf 업데이트</description>
     <language>ko</language>
+    <item>
+      <title>0.1.1</title>
+      <pubDate>Mon, 22 Jun 2026 13:03:57 +0000</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<h2>oh-my-pdf 0.1.1</h2>
+<ul>
+<li>Sparkle appcast와 업데이트 ZIP 게시</li>
+<li>자동 업데이트 서명 계정을 `oh-my-pdf`로 고정</li>
+</ul>]]></description>
+      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.1.zip" type="application/octet-stream" sparkle:edSignature="iTtkhZr+QfE4Fh6ttBjZqQAjixkff1eXKN+rVw5OqZtyHlQCAtd1mzD5GCoWey/B7lztK3tI46OJmXdZZwEfBA==" length="1108150" />
+    </item>
   </channel>
 </rss>
