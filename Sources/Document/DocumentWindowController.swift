@@ -129,14 +129,28 @@ private protocol AnnotatingPDFViewDelegate: AnyObject {
 
 private final class AnnotationTableView: NSTableView {
     weak var keyDelegate: AnnotationTableViewKeyDelegate?
+    private var lastClickedRow = -1
+    private var lastClickTimestamp: TimeInterval = 0
 
     override var acceptsFirstResponder: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
-        if event.clickCount >= 2 {
-            keyDelegate?.annotationTableDidRequestEdit(self)
+        let point = convert(event.locationInWindow, from: nil)
+        let clickedRow = row(at: point)
+        if clickedRow >= 0 {
+            let isManualDoubleClick = clickedRow == lastClickedRow
+                && event.timestamp - lastClickTimestamp <= NSEvent.doubleClickInterval
+            lastClickedRow = clickedRow
+            lastClickTimestamp = event.timestamp
+
+            if event.clickCount >= 2 || isManualDoubleClick {
+                selectRowIndexes(IndexSet(integer: clickedRow), byExtendingSelection: false)
+                window?.makeFirstResponder(self)
+                keyDelegate?.annotationTableDidRequestEdit(self)
+                return
+            }
         }
+        super.mouseDown(with: event)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -159,10 +173,14 @@ private protocol AnnotationTableViewKeyDelegate: AnyObject {
 
 private final class AnnotationCellView: NSTableCellView {
     let summaryField = NSTextField()
+    var onEditRequested: (() -> Void)?
 
     private let container = NSView()
     private let pageBadge = NSTextField(labelWithString: "")
     private let typeField = NSTextField(labelWithString: "")
+    private let editingBadge = NSTextField(labelWithString: "수정 중")
+    private var isEditingMode = false
+    private var lastClickTimestamp: TimeInterval = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -172,6 +190,15 @@ private final class AnnotationCellView: NSTableCellView {
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setup()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let isManualDoubleClick = event.timestamp - lastClickTimestamp <= NSEvent.doubleClickInterval
+        lastClickTimestamp = event.timestamp
+        super.mouseDown(with: event)
+        if !isEditingMode, event.clickCount >= 2 || isManualDoubleClick {
+            onEditRequested?()
+        }
     }
 
     private func setup() {
@@ -192,6 +219,14 @@ private final class AnnotationCellView: NSTableCellView {
         typeField.lineBreakMode = .byTruncatingTail
         typeField.translatesAutoresizingMaskIntoConstraints = false
 
+        editingBadge.alignment = .center
+        editingBadge.font = .boldSystemFont(ofSize: 11)
+        editingBadge.textColor = .selectedControlTextColor
+        editingBadge.wantsLayer = true
+        editingBadge.layer?.cornerRadius = 8
+        editingBadge.layer?.backgroundColor = NSColor.selectedContentBackgroundColor.cgColor
+        editingBadge.translatesAutoresizingMaskIntoConstraints = false
+
         summaryField.font = .systemFont(ofSize: 12)
         summaryField.lineBreakMode = .byTruncatingTail
         summaryField.maximumNumberOfLines = 1
@@ -204,6 +239,7 @@ private final class AnnotationCellView: NSTableCellView {
 
         container.addSubview(pageBadge)
         container.addSubview(typeField)
+        container.addSubview(editingBadge)
         container.addSubview(summaryField)
 
         NSLayoutConstraint.activate([
@@ -218,11 +254,16 @@ private final class AnnotationCellView: NSTableCellView {
             pageBadge.heightAnchor.constraint(equalToConstant: 18),
 
             typeField.leadingAnchor.constraint(equalTo: pageBadge.trailingAnchor, constant: 8),
-            typeField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            typeField.trailingAnchor.constraint(lessThanOrEqualTo: editingBadge.leadingAnchor, constant: -8),
             typeField.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
 
+            editingBadge.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            editingBadge.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            editingBadge.widthAnchor.constraint(equalToConstant: 50),
+            editingBadge.heightAnchor.constraint(equalToConstant: 18),
+
             summaryField.leadingAnchor.constraint(equalTo: typeField.leadingAnchor),
-            summaryField.trailingAnchor.constraint(equalTo: typeField.trailingAnchor),
+            summaryField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
             summaryField.topAnchor.constraint(equalTo: typeField.bottomAnchor, constant: 3),
             summaryField.heightAnchor.constraint(equalToConstant: 20)
         ])
@@ -236,6 +277,7 @@ private final class AnnotationCellView: NSTableCellView {
         target: AnyObject?,
         action: Selector
     ) {
+        isEditingMode = isEditing
         container.layer?.backgroundColor = (isEditing
             ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.10)
             : isSelected
@@ -246,14 +288,15 @@ private final class AnnotationCellView: NSTableCellView {
 
         pageBadge.stringValue = item.pageText
         pageBadge.layer?.backgroundColor = (item.typeText == "AI" ? NSColor.systemRed : NSColor.systemBlue).cgColor
-        typeField.stringValue = isEditing ? "\(item.typeText) · 수정 중" : item.typeText
+        typeField.stringValue = item.typeText
+        editingBadge.isHidden = !isEditing
 
         let rawValue = item.annotation.contents?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         summaryField.stringValue = isEditing ? rawValue : item.summary
-        summaryField.placeholderString = item.summary
+        summaryField.placeholderString = isEditing ? "메모 입력" : item.summary
         summaryField.textColor = isEditing || isSelected ? .labelColor : .secondaryLabelColor
         summaryField.isEditable = isEditing
-        summaryField.isSelectable = true
+        summaryField.isSelectable = isEditing
         summaryField.drawsBackground = false
         summaryField.backgroundColor = .clear
         summaryField.lineBreakMode = isEditing ? .byClipping : .byTruncatingTail
@@ -973,6 +1016,7 @@ final class DocumentWindowController: NSWindowController {
         listEditingAnnotation = item.annotation
 
         annotationTable.scrollRowToVisible(row)
+        annotationTable.noteHeightOfRows(withIndexesChanged: IndexSet(integer: row))
         annotationTable.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: IndexSet(integer: 0))
         focusCurrentListEditor()
         statusLabel.stringValue = "주석 목록에서 메모 편집 중"
@@ -994,6 +1038,7 @@ final class DocumentWindowController: NSWindowController {
         listEditingField = nil
         refreshAnnotationList()
         if let index = annotationItems.firstIndex(where: { $0.annotation === editedAnnotation }) {
+            annotationTable.noteHeightOfRows(withIndexesChanged: IndexSet(integer: index))
             annotationTable.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         }
         statusLabel.stringValue = "주석 메모 저장됨"
@@ -1170,6 +1215,11 @@ extension DocumentWindowController: NSTableViewDataSource, NSTableViewDelegate {
         annotationItems.count
     }
 
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        guard annotationItems.indices.contains(row) else { return 64 }
+        return listEditingAnnotation === annotationItems[row].annotation ? 82 : 64
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard annotationItems.indices.contains(row) else { return nil }
         let item = annotationItems[row]
@@ -1184,6 +1234,13 @@ extension DocumentWindowController: NSTableViewDataSource, NSTableViewDelegate {
             target: self,
             action: #selector(commitListInlineEdit(_:))
         )
+        cell.onEditRequested = { [weak self, weak cell] in
+            guard let self, let cell else { return }
+            let row = self.annotationTable.row(for: cell)
+            guard self.annotationItems.indices.contains(row) else { return }
+            self.annotationTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            self.beginListInlineEditForSelectedRow()
+        }
         if isEditing {
             listEditingField = cell.summaryField
         }
@@ -1192,6 +1249,11 @@ extension DocumentWindowController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         if listEditingAnnotation != nil {
+            let selectedRow = annotationTable.selectedRow
+            if annotationItems.indices.contains(selectedRow),
+               annotationItems[selectedRow].annotation === listEditingAnnotation {
+                return
+            }
             finishListInlineEdit()
         }
         let row = annotationTable.selectedRow
