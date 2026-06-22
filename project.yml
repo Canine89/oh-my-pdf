@@ -1,0 +1,57 @@
+name: oh-my-pdf
+options:
+  bundleIdPrefix: com.goldenrabbit
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.5.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    DEAD_CODE_STRIPPING: YES
+
+targets:
+  oh-my-pdf:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Sources
+      - path: Resources
+    dependencies:
+      - package: Sparkle
+    info:
+      path: Config/Info.plist
+      properties:
+        CFBundleDisplayName: oh-my-pdf
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        NSHumanReadableCopyright: "Copyright © 2026 Golden Rabbit"
+        NSDocumentsFolderUsageDescription: "PDF 파일과 용어집 CSV를 열고 저장하기 위해 필요합니다."
+        SUFeedURL: https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/appcast.xml
+        SUPublicEDKey: ""
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.goldenrabbit.ohmypdf
+        PRODUCT_NAME: oh-my-pdf
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: M7NU9F8CZN
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
