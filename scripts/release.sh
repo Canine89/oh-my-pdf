@@ -93,7 +93,7 @@ fi
 
 SIGN_UPDATE="$(find "$HOME/Library/Developer/Xcode/DerivedData" -name sign_update -path '*sparkle*' -type f 2>/dev/null | head -1)"
 [ -x "$SIGN_UPDATE" ] || { echo "✗ sign_update 도구를 못 찾음. Sparkle 패키지 해석 후 다시 실행하세요."; exit 1; }
-SIG_ATTRS="$("$SIGN_UPDATE" "$ZIP")"
+SIG_ATTRS="$("$SIGN_UPDATE" --account oh-my-pdf "$ZIP")"
 mkdir -p "$UPDATES"
 UPDATE_ZIP="$UPDATES/oh-my-pdf-$VERSION.zip"
 cp "$ZIP" "$UPDATE_ZIP"

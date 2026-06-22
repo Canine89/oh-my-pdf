@@ -39,7 +39,7 @@ targets:
         NSHumanReadableCopyright: "Copyright © 2026 Golden Rabbit"
         NSDocumentsFolderUsageDescription: "PDF 파일과 용어집 CSV를 열고 저장하기 위해 필요합니다."
         SUFeedURL: https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/appcast.xml
-        SUPublicEDKey: ""
+        SUPublicEDKey: Sb4b1FgWbkWCYtRCOzfkxEoFYhVoVJuSBh97j5saHrA=
         SUEnableAutomaticChecks: true
         SUScheduledCheckInterval: 86400
     settings:

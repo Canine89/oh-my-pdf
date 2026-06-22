@@ -31,7 +31,7 @@
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string></string>
+	<string>Sb4b1FgWbkWCYtRCOzfkxEoFYhVoVJuSBh97j5saHrA=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>
