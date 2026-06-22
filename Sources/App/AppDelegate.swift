@@ -45,8 +45,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let editItem = NSMenuItem()
         mainMenu.addItem(editItem)
         let editMenu = NSMenu(title: "편집")
+        editMenu.addItem(withTitle: "되돌리기", action: Selector(("undo:")), keyEquivalent: "z")
+        let controlUndo = NSMenuItem(title: "되돌리기", action: Selector(("undo:")), keyEquivalent: "z")
+        controlUndo.keyEquivalentModifierMask = [.control]
+        editMenu.addItem(controlUndo)
+        editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(withTitle: "복사", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "모두 선택", action: #selector(NSResponder.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(withTitle: "주석 수정", action: Selector(("editSelectedAnnotation:")), keyEquivalent: "\r")
+        editMenu.addItem(withTitle: "삭제", action: #selector(NSText.delete(_:)), keyEquivalent: "\u{8}")
         editItem.submenu = editMenu
 
         NSApp.mainMenu = mainMenu

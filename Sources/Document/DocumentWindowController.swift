@@ -1,24 +1,156 @@
 import AppKit
 import PDFKit
 
+private enum AnnotationTool: CaseIterable {
+    case select
+    case highlight
+    case underline
+    case strikeout
+    case textBox
+    case arrowTextBox
+    case selectedNote
+    case deletion
+    case replacement
+
+    var title: String {
+        switch self {
+        case .select: return "선택"
+        case .highlight: return "하이라이트"
+        case .underline: return "밑줄"
+        case .strikeout: return "취소선"
+        case .textBox: return "텍스트 박스"
+        case .arrowTextBox: return "화살표 메모"
+        case .selectedNote: return "선택 메모"
+        case .deletion: return "삭제 제안"
+        case .replacement: return "대체 제안"
+        }
+    }
+}
+
+private struct AnnotationListItem {
+    let pageIndex: Int
+    let annotation: PDFAnnotation
+
+    var pageText: String {
+        "\(pageIndex + 1)"
+    }
+
+    var typeText: String {
+        if annotation.contents?.hasPrefix("[AI]") == true { return "AI" }
+        switch annotation.type {
+        case "Highlight": return "하이라이트"
+        case "Underline": return "밑줄"
+        case "StrikeOut": return "취소선"
+        case "FreeText": return "텍스트"
+        case "Line": return "화살표"
+        case "Text": return "메모"
+        default: return annotation.type ?? "주석"
+        }
+    }
+
+    var summary: String {
+        let value = annotation.contents?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? "(내용 없음)" : value
+    }
+}
+
+private enum UndoAction {
+    case add([(PDFPage, PDFAnnotation)])
+    case remove([(PDFPage, PDFAnnotation)])
+}
+
+private final class AnnotatingPDFView: PDFView {
+    weak var annotationDelegate: AnnotatingPDFViewDelegate?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+
+        if let page = page(for: viewPoint, nearest: true) {
+            let pagePoint = convert(viewPoint, to: page)
+            if let annotation = page.annotation(at: pagePoint) {
+                annotationDelegate?.pdfView(self, didSelect: annotation, on: page)
+                if event.clickCount >= 2 {
+                    annotationDelegate?.pdfView(self, didRequestEdit: annotation, on: page)
+                }
+                return
+            }
+        }
+
+        if annotationDelegate?.pdfView(self, didClickEmptyPageAt: viewPoint) == true {
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let command = event.modifierFlags.contains(.command)
+        let control = event.modifierFlags.contains(.control)
+
+        if key == "z", command || control {
+            annotationDelegate?.pdfViewDidRequestUndo(self)
+            return
+        }
+        if event.keyCode == 51 || event.keyCode == 117 {
+            annotationDelegate?.pdfViewDidRequestDelete(self)
+            return
+        }
+        if event.keyCode == 36 {
+            annotationDelegate?.pdfViewDidRequestEditSelected(self)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    @objc func undo(_ sender: Any?) {
+        annotationDelegate?.pdfViewDidRequestUndo(self)
+    }
+
+    @objc func delete(_ sender: Any?) {
+        annotationDelegate?.pdfViewDidRequestDelete(self)
+    }
+
+    @objc func editSelectedAnnotation(_ sender: Any?) {
+        annotationDelegate?.pdfViewDidRequestEditSelected(self)
+    }
+}
+
+private protocol AnnotatingPDFViewDelegate: AnyObject {
+    func pdfView(_ pdfView: AnnotatingPDFView, didSelect annotation: PDFAnnotation, on page: PDFPage)
+    func pdfView(_ pdfView: AnnotatingPDFView, didRequestEdit annotation: PDFAnnotation, on page: PDFPage)
+    func pdfView(_ pdfView: AnnotatingPDFView, didClickEmptyPageAt viewPoint: NSPoint) -> Bool
+    func pdfViewDidRequestUndo(_ pdfView: AnnotatingPDFView)
+    func pdfViewDidRequestDelete(_ pdfView: AnnotatingPDFView)
+    func pdfViewDidRequestEditSelected(_ pdfView: AnnotatingPDFView)
+}
+
 final class DocumentWindowController: NSWindowController {
-    private let pdfView = PDFView()
+    private let pdfView = AnnotatingPDFView()
     private let statusLabel = NSTextField(labelWithString: "PDF를 열어 주세요.")
     private let pageLabel = NSTextField(labelWithString: "0 / 0")
-    private let resultView = NSTextView()
+    private let annotationTable = NSTableView()
     private let apiKeyField = NSSecureTextField()
     private let glossaryLabel = NSTextField(labelWithString: "용어집 없음")
     private let strengthPopup = NSPopUpButton()
-    private let gptCheckbox = NSButton(checkboxWithTitle: "GPT 사용", target: nil, action: nil)
-    private let publisherCheckbox = NSButton(checkboxWithTitle: "CSV 용어집", target: nil, action: nil)
-    private let auxiliaryCheckbox = NSButton(checkboxWithTitle: "보조용언 붙임", target: nil, action: nil)
+    private let gptCheckbox = NSButton(checkboxWithTitle: "GPT", target: nil, action: nil)
+    private let publisherCheckbox = NSButton(checkboxWithTitle: "CSV", target: nil, action: nil)
+    private let auxiliaryCheckbox = NSButton(checkboxWithTitle: "보조용언", target: nil, action: nil)
 
     private var documentURL: URL?
     private var glossaryRules: [GlossaryRule] = []
+    private var annotationItems: [AnnotationListItem] = []
+    private var selectedAnnotation: PDFAnnotation?
+    private var selectedAnnotationPage: PDFPage?
+    private var selectedTool: AnnotationTool = .select
+    private var toolButtons: [AnnotationTool: NSButton] = [:]
+    private var undoStack: [UndoAction] = []
     private let correctionEngine = CorrectionEngine()
 
     init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1360, height: 860),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered,
                               defer: false)
@@ -42,10 +174,11 @@ final class DocumentWindowController: NSWindowController {
         let toolbar = makeToolbar()
         let statusBar = makeStatusBar()
         let body = NSView()
-        let sidePanel = makeSidePanel()
+        let leftPanel = makeLeftPanel()
         let divider = NSBox()
         divider.boxType = .separator
 
+        pdfView.annotationDelegate = self
         pdfView.autoScales = true
         pdfView.displayBox = .cropBox
         pdfView.displayMode = .singlePage
@@ -57,7 +190,7 @@ final class DocumentWindowController: NSWindowController {
             $0.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview($0)
         }
-        [pdfView, divider, sidePanel].forEach {
+        [leftPanel, divider, pdfView].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             body.addSubview($0)
         }
@@ -76,23 +209,24 @@ final class DocumentWindowController: NSWindowController {
             statusBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             statusBar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
-            sidePanel.topAnchor.constraint(equalTo: body.topAnchor),
-            sidePanel.trailingAnchor.constraint(equalTo: body.trailingAnchor),
-            sidePanel.bottomAnchor.constraint(equalTo: body.bottomAnchor),
-            sidePanel.widthAnchor.constraint(equalToConstant: 340),
+            leftPanel.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            leftPanel.topAnchor.constraint(equalTo: body.topAnchor),
+            leftPanel.bottomAnchor.constraint(equalTo: body.bottomAnchor),
+            leftPanel.widthAnchor.constraint(equalToConstant: 300),
 
+            divider.leadingAnchor.constraint(equalTo: leftPanel.trailingAnchor),
             divider.topAnchor.constraint(equalTo: body.topAnchor),
-            divider.trailingAnchor.constraint(equalTo: sidePanel.leadingAnchor),
             divider.bottomAnchor.constraint(equalTo: body.bottomAnchor),
             divider.widthAnchor.constraint(equalToConstant: 1),
 
-            pdfView.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            pdfView.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
             pdfView.topAnchor.constraint(equalTo: body.topAnchor),
-            pdfView.trailingAnchor.constraint(equalTo: divider.leadingAnchor),
+            pdfView.trailingAnchor.constraint(equalTo: body.trailingAnchor),
             pdfView.bottomAnchor.constraint(equalTo: body.bottomAnchor),
 
-            body.heightAnchor.constraint(greaterThanOrEqualToConstant: 420)
+            body.heightAnchor.constraint(greaterThanOrEqualToConstant: 460)
         ])
+        setTool(.select)
         updateControls()
     }
 
@@ -100,7 +234,7 @@ final class DocumentWindowController: NSWindowController {
         let bar = NSStackView()
         bar.orientation = .horizontal
         bar.alignment = .centerY
-        bar.spacing = 8
+        bar.spacing = 7
         bar.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
         bar.translatesAutoresizingMaskIntoConstraints = false
 
@@ -112,14 +246,15 @@ final class DocumentWindowController: NSWindowController {
         addButton("다음", action: #selector(nextPage(_:)), to: bar)
         bar.addArrangedSubview(pageLabel)
         addSeparator(to: bar)
-        addButton("하이라이트", action: #selector(addHighlight(_:)), to: bar)
-        addButton("밑줄", action: #selector(addUnderline(_:)), to: bar)
-        addButton("취소선", action: #selector(addStrikeout(_:)), to: bar)
-        addButton("텍스트 박스", action: #selector(addTextBox(_:)), to: bar)
-        addButton("화살표 메모", action: #selector(addArrowTextBox(_:)), to: bar)
-        addButton("선택 메모", action: #selector(addSelectedTextNote(_:)), to: bar)
-        addButton("삭제 제안", action: #selector(addDeletionSuggestion(_:)), to: bar)
-        addButton("대체 제안", action: #selector(addReplacementSuggestion(_:)), to: bar)
+
+        AnnotationTool.allCases.forEach { tool in
+            let button = NSButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
+            button.bezelStyle = .texturedRounded
+            button.setButtonType(.toggle)
+            button.tag = AnnotationTool.allCases.firstIndex(of: tool) ?? 0
+            toolButtons[tool] = button
+            bar.addArrangedSubview(button)
+        }
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -133,16 +268,42 @@ final class DocumentWindowController: NSWindowController {
         return bar
     }
 
-    private func makeSidePanel() -> NSView {
+    private func makeLeftPanel() -> NSView {
         let panel = NSStackView()
         panel.orientation = .vertical
         panel.spacing = 10
         panel.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-        panel.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: "AI 교정")
+        let title = NSTextField(labelWithString: "주석 목록")
         title.font = .boldSystemFont(ofSize: 15)
         panel.addArrangedSubview(title)
+
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        annotationTable.headerView = nil
+        annotationTable.rowHeight = 24
+        annotationTable.delegate = self
+        annotationTable.dataSource = self
+        annotationTable.target = self
+        annotationTable.doubleAction = #selector(editSelectedAnnotation(_:))
+        addTableColumn("page", width: 42)
+        addTableColumn("type", width: 76)
+        addTableColumn("summary", width: 170)
+        scroll.documentView = annotationTable
+        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+        panel.addArrangedSubview(scroll)
+
+        let actionRow = NSStackView()
+        actionRow.orientation = .horizontal
+        actionRow.spacing = 8
+        addButton("수정", action: #selector(editSelectedAnnotation(_:)), to: actionRow)
+        addButton("삭제", action: #selector(deleteSelectedAnnotation(_:)), to: actionRow)
+        panel.addArrangedSubview(actionRow)
+
+        let aiTitle = NSTextField(labelWithString: "AI 설정")
+        aiTitle.font = .boldSystemFont(ofSize: 15)
+        panel.addArrangedSubview(aiTitle)
 
         apiKeyField.placeholderString = "OpenAI API 키"
         apiKeyField.stringValue = KeychainStore.loadAPIKey() ?? ""
@@ -154,6 +315,9 @@ final class DocumentWindowController: NSWindowController {
         saveKey.bezelStyle = .rounded
         panel.addArrangedSubview(saveKey)
 
+        let checkRow = NSStackView()
+        checkRow.orientation = .horizontal
+        checkRow.spacing = 8
         gptCheckbox.state = Settings.shared.useGPT ? .on : .off
         gptCheckbox.target = self
         gptCheckbox.action = #selector(updateSettings(_:))
@@ -163,9 +327,10 @@ final class DocumentWindowController: NSWindowController {
         auxiliaryCheckbox.state = Settings.shared.joinAuxiliaryVerbs ? .on : .off
         auxiliaryCheckbox.target = self
         auxiliaryCheckbox.action = #selector(updateSettings(_:))
-        panel.addArrangedSubview(gptCheckbox)
-        panel.addArrangedSubview(publisherCheckbox)
-        panel.addArrangedSubview(auxiliaryCheckbox)
+        checkRow.addArrangedSubview(gptCheckbox)
+        checkRow.addArrangedSubview(publisherCheckbox)
+        checkRow.addArrangedSubview(auxiliaryCheckbox)
+        panel.addArrangedSubview(checkRow)
 
         strengthPopup.removeAllItems()
         CorrectionStrength.allCases.forEach { strengthPopup.addItem(withTitle: $0.label) }
@@ -179,17 +344,13 @@ final class DocumentWindowController: NSWindowController {
         panel.addArrangedSubview(glossaryButton)
         panel.addArrangedSubview(glossaryLabel)
 
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
-        resultView.isEditable = false
-        resultView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        resultView.string = "검사 결과가 여기에 표시됩니다."
-        scroll.documentView = resultView
-        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
-        panel.addArrangedSubview(scroll)
-
         return panel
+    }
+
+    private func addTableColumn(_ identifier: String, width: CGFloat) {
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
+        column.width = width
+        annotationTable.addTableColumn(column)
     }
 
     private func makeStatusBar() -> NSView {
@@ -228,6 +389,9 @@ final class DocumentWindowController: NSWindowController {
             return
         }
         documentURL = url
+        selectedAnnotation = nil
+        selectedAnnotationPage = nil
+        undoStack.removeAll()
         pdfView.document = document
         if let firstPage = document.page(at: 0) {
             pdfView.go(to: firstPage)
@@ -238,10 +402,12 @@ final class DocumentWindowController: NSWindowController {
             self?.pdfView.autoScales = true
             self?.pdfView.scaleFactor = self?.pdfView.scaleFactorForSizeToFit ?? 1
             self?.pdfView.layoutDocumentView()
+            self?.refreshAnnotationList()
             self?.updateControls()
         }
         window?.title = "\(Brand.name) - \(url.lastPathComponent)"
         statusLabel.stringValue = "열림: \(url.path)"
+        refreshAnnotationList()
         updateControls()
     }
 
@@ -281,40 +447,63 @@ final class DocumentWindowController: NSWindowController {
         updateControls()
     }
 
-    @objc private func addHighlight(_ sender: Any?) {
-        addMarkupAnnotation(.highlight, color: Brand.highlight)
+    @objc private func selectTool(_ sender: NSButton) {
+        let index = max(0, min(sender.tag, AnnotationTool.allCases.count - 1))
+        let tool = AnnotationTool.allCases[index]
+        setTool(tool)
+        applyCurrentSelectionIfPossible(for: tool)
     }
 
-    @objc private func addUnderline(_ sender: Any?) {
-        addMarkupAnnotation(.underline, color: .systemBlue)
+    private func setTool(_ tool: AnnotationTool) {
+        selectedTool = tool
+        toolButtons.forEach { current, button in
+            button.state = current == tool ? .on : .off
+        }
+        statusLabel.stringValue = "현재 도구: \(tool.title)"
     }
 
-    @objc private func addStrikeout(_ sender: Any?) {
-        addMarkupAnnotation(.strikeOut, color: .systemRed)
+    private func applyCurrentSelectionIfPossible(for tool: AnnotationTool) {
+        switch tool {
+        case .highlight:
+            addMarkupAnnotation(.highlight, color: Brand.highlight, contents: nil)
+        case .underline:
+            addMarkupAnnotation(.underline, color: .systemBlue, contents: nil)
+        case .strikeout:
+            addMarkupAnnotation(.strikeOut, color: .systemRed, contents: nil)
+        case .selectedNote:
+            addSelectedTextNote()
+        case .deletion:
+            addDeletionSuggestion()
+        case .replacement:
+            addReplacementSuggestion()
+        default:
+            break
+        }
     }
 
-    @objc private func addTextBox(_ sender: Any?) {
-        guard let page = pdfView.currentPage else { return }
-        let annotation = PDFAnnotation(bounds: centeredBounds(on: page), forType: .freeText, withProperties: nil)
+    private func addTextBox(at viewPoint: NSPoint? = nil) {
+        guard let page = targetPage(for: viewPoint) else { return }
+        let bounds = viewPoint.map { centeredBounds(around: $0, on: page) } ?? centeredBounds(on: page)
+        let annotation = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)
         annotation.contents = "메모"
         annotation.font = .systemFont(ofSize: 13)
         annotation.color = .clear
         annotation.fontColor = .labelColor
         annotation.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.24)
-        page.addAnnotation(annotation)
+        addAnnotations([(page, annotation)], select: annotation)
     }
 
-    @objc private func addArrowTextBox(_ sender: Any?) {
-        guard let page = pdfView.currentPage else { return }
-        let bounds = centeredBounds(on: page)
-        let line = PDFAnnotation(bounds: bounds.insetBy(dx: -70, dy: -30), forType: .line, withProperties: nil)
+    private func addArrowTextBox(at viewPoint: NSPoint? = nil) {
+        guard let page = targetPage(for: viewPoint) else { return }
+        let bounds = viewPoint.map { centeredBounds(around: $0, on: page) } ?? centeredBounds(on: page)
+        let lineBounds = bounds.insetBy(dx: -70, dy: -30)
+        let line = PDFAnnotation(bounds: lineBounds, forType: .line, withProperties: nil)
         line.color = Brand.accent
         line.border = PDFBorder()
         line.border?.lineWidth = 2
         line.startPoint = NSPoint(x: line.bounds.minX, y: line.bounds.minY)
         line.endPoint = NSPoint(x: line.bounds.midX, y: line.bounds.midY)
         line.endLineStyle = .closedArrow
-        page.addAnnotation(line)
 
         let text = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)
         text.contents = "대체/설명 입력"
@@ -322,37 +511,41 @@ final class DocumentWindowController: NSWindowController {
         text.color = .clear
         text.fontColor = .labelColor
         text.backgroundColor = NSColor.systemRed.withAlphaComponent(0.12)
-        page.addAnnotation(text)
+        addAnnotations([(page, line), (page, text)], select: text)
     }
 
-    @objc private func addSelectedTextNote(_ sender: Any?) {
+    private func addSelectedTextNote() {
         guard let selection = pdfView.currentSelection, let page = selection.pages.first else { return }
         let note = PDFAnnotation(bounds: selection.bounds(for: page).offsetBy(dx: 12, dy: 12),
                                  forType: .text,
                                  withProperties: nil)
         note.contents = "선택 텍스트 주석: \(selection.string ?? "")"
         note.color = .systemYellow
-        page.addAnnotation(note)
+        addAnnotations([(page, note)], select: note)
     }
 
-    @objc private func addDeletionSuggestion(_ sender: Any?) {
+    private func addDeletionSuggestion() {
         guard let selection = pdfView.currentSelection else { return }
-        addMarkupAnnotation(.strikeOut, color: .systemRed)
+        var added = addMarkupAnnotation(.strikeOut, color: .systemRed, contents: "삭제 제안", registerUndo: false)
         if let page = selection.pages.first {
             let note = PDFAnnotation(bounds: selection.bounds(for: page).offsetBy(dx: 12, dy: 12),
                                      forType: .text,
                                      withProperties: nil)
             note.contents = "삭제 제안: \(selection.string ?? "")"
             note.color = .systemRed
-            page.addAnnotation(note)
+            added.append((page, note))
+        }
+        if !added.isEmpty {
+            undoStack.append(.add(added))
+            refreshAnnotationList()
         }
     }
 
-    @objc private func addReplacementSuggestion(_ sender: Any?) {
+    private func addReplacementSuggestion() {
         guard let selection = pdfView.currentSelection, let page = selection.pages.first else { return }
-        addMarkupAnnotation(.strikeOut, color: .systemRed)
         let replacement = prompt("대체 텍스트", message: "선택한 텍스트를 무엇으로 바꿀까요?")
         guard !replacement.isEmpty else { return }
+        var added = addMarkupAnnotation(.strikeOut, color: .systemRed, contents: "대체 제안: \(selection.string ?? "") -> \(replacement)", registerUndo: false)
         let bounds = selection.bounds(for: page).offsetBy(dx: 12, dy: 18)
         let annotation = PDFAnnotation(bounds: NSRect(x: bounds.minX, y: bounds.minY, width: max(bounds.width, 180), height: 42),
                                        forType: .freeText,
@@ -362,22 +555,52 @@ final class DocumentWindowController: NSWindowController {
         annotation.fontColor = .systemRed
         annotation.color = .clear
         annotation.backgroundColor = NSColor.systemRed.withAlphaComponent(0.10)
-        page.addAnnotation(annotation)
+        added.append((page, annotation))
+        addAnnotations(added, select: annotation)
     }
 
-    private func addMarkupAnnotation(_ type: PDFAnnotationSubtype, color: NSColor) {
-        guard let selection = pdfView.currentSelection else { return }
+    @discardableResult
+    private func addMarkupAnnotation(_ type: PDFAnnotationSubtype, color: NSColor, contents: String?, registerUndo: Bool = true) -> [(PDFPage, PDFAnnotation)] {
+        guard let selection = pdfView.currentSelection else { return [] }
         let selections = selection.selectionsByLine()
         let targets = selections.isEmpty ? [selection] : selections
+        var added: [(PDFPage, PDFAnnotation)] = []
         for item in targets {
             for page in item.pages {
                 let bounds = item.bounds(for: page)
                 guard bounds.width > 0, bounds.height > 0 else { continue }
                 let annotation = PDFAnnotation(bounds: bounds, forType: type, withProperties: nil)
                 annotation.color = color
+                annotation.contents = contents
                 page.addAnnotation(annotation)
+                added.append((page, annotation))
             }
         }
+        if !added.isEmpty, registerUndo {
+            undoStack.append(.add(added))
+            selectAnnotation(added.last!.1, on: added.last!.0)
+            refreshAnnotationList()
+        }
+        return added
+    }
+
+    private func addAnnotations(_ annotations: [(PDFPage, PDFAnnotation)], select annotationToSelect: PDFAnnotation?) {
+        for (page, annotation) in annotations {
+            page.addAnnotation(annotation)
+        }
+        undoStack.append(.add(annotations))
+        if let annotationToSelect,
+           let page = annotations.first(where: { $0.1 === annotationToSelect })?.0 {
+            selectAnnotation(annotationToSelect, on: page)
+        }
+        refreshAnnotationList()
+    }
+
+    private func targetPage(for viewPoint: NSPoint?) -> PDFPage? {
+        if let viewPoint {
+            return pdfView.page(for: viewPoint, nearest: true)
+        }
+        return pdfView.currentPage
     }
 
     @objc private func loadGlossary(_ sender: Any?) {
@@ -413,7 +636,6 @@ final class DocumentWindowController: NSWindowController {
     @objc private func runCorrection(_ sender: Any?) {
         guard let document = pdfView.document else { return }
         updateSettings(nil)
-        resultView.string = ""
         statusLabel.stringValue = "맞춤법 검사 중..."
 
         let options = CorrectionOptions(useGPT: Settings.shared.useGPT,
@@ -422,69 +644,136 @@ final class DocumentWindowController: NSWindowController {
                                         joinAuxiliaryVerbs: Settings.shared.joinAuxiliaryVerbs)
 
         Task {
-            var results: [PageCorrectionResult] = []
+            var correctionCount = 0
             for pageIndex in 0..<document.pageCount {
                 guard let page = document.page(at: pageIndex) else { continue }
                 let raw = page.string ?? ""
                 let normalized = PDFTextNormalizer.normalizePageText(raw)
                 do {
                     let corrected = try await correctionEngine.correct(text: normalized, options: options, glossary: glossaryRules)
-                    let pageResult = PageCorrectionResult(pageIndex: pageIndex,
-                                                          originalText: raw,
-                                                          normalizedText: normalized,
-                                                          correctedText: corrected.corrected,
-                                                          corrections: corrected.corrections)
-                    results.append(pageResult)
-                    applyCorrections(pageResult, in: document)
-                    appendResult(pageResult)
+                    correctionCount += applyAICorrections(corrected.corrections, pageIndex: pageIndex, in: document)
                 } catch {
-                    appendLog("\(pageIndex + 1)쪽 실패: \(error.localizedDescription)")
+                    statusLabel.stringValue = "\(pageIndex + 1)쪽 실패: \(error.localizedDescription)"
                 }
                 statusLabel.stringValue = "맞춤법 검사 중... \(pageIndex + 1) / \(document.pageCount)"
             }
-            let count = results.reduce(0) { $0 + $1.corrections.count }
-            statusLabel.stringValue = "검사 완료: \(count)개 교정 후보"
+            refreshAnnotationList()
+            statusLabel.stringValue = "검사 완료: \(correctionCount)개 AI 교정 표시"
         }
     }
 
-    private func applyCorrections(_ result: PageCorrectionResult, in document: PDFDocument) {
-        guard document.page(at: result.pageIndex) != nil else { return }
-        for correction in result.corrections {
+    private func applyAICorrections(_ corrections: [TextCorrection], pageIndex: Int, in document: PDFDocument) -> Int {
+        guard !corrections.isEmpty else { return 0 }
+        var added: [(PDFPage, PDFAnnotation)] = []
+        for correction in corrections {
+            let message = "[AI] \(correction.original) -> \(correction.corrected)"
             let selections = document.findString(correction.original, withOptions: [.caseInsensitive])
-                .filter { $0.pages.contains { document.index(for: $0) == result.pageIndex } }
+                .filter { $0.pages.contains { document.index(for: $0) == pageIndex } }
             for selection in selections {
-                for page in selection.pages where document.index(for: page) == result.pageIndex {
+                for page in selection.pages where document.index(for: page) == pageIndex {
                     let bounds = selection.bounds(for: page)
+                    guard bounds.width > 0, bounds.height > 0 else { continue }
                     let highlight = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
                     highlight.color = Brand.correction
-                    highlight.contents = "\(correction.original) -> \(correction.corrected)\n\(correction.explanation)"
+                    highlight.contents = message
                     page.addAnnotation(highlight)
-
-                    let note = PDFAnnotation(bounds: bounds.offsetBy(dx: 8, dy: 8), forType: .text, withProperties: nil)
-                    note.contents = "\(correction.corrected)\n\(correction.explanation)"
-                    note.color = .systemRed
-                    page.addAnnotation(note)
+                    added.append((page, highlight))
                 }
             }
         }
+        if !added.isEmpty {
+            undoStack.append(.add(added))
+        }
+        return added.count
     }
 
-    private func appendResult(_ result: PageCorrectionResult) {
-        guard result.hasErrors else { return }
-        appendLog("\n[\(result.pageIndex + 1)쪽]")
-        for item in result.corrections {
-            appendLog("- \(item.original) -> \(item.corrected) (\(item.type)): \(item.explanation)")
+    private func refreshAnnotationList() {
+        guard let document = pdfView.document else {
+            annotationItems = []
+            annotationTable.reloadData()
+            return
+        }
+        var items: [AnnotationListItem] = []
+        for pageIndex in 0..<document.pageCount {
+            guard let page = document.page(at: pageIndex) else { continue }
+            for annotation in page.annotations {
+                items.append(AnnotationListItem(pageIndex: pageIndex, annotation: annotation))
+            }
+        }
+        annotationItems = items
+        annotationTable.reloadData()
+        syncTableSelection()
+    }
+
+    private func selectAnnotation(_ annotation: PDFAnnotation, on page: PDFPage) {
+        selectedAnnotation = annotation
+        selectedAnnotationPage = page
+        pdfView.go(to: page)
+        statusLabel.stringValue = "선택한 주석: \(annotation.contents ?? annotation.type ?? "주석")"
+        syncTableSelection()
+    }
+
+    private func syncTableSelection() {
+        guard let selectedAnnotation else {
+            annotationTable.deselectAll(nil)
+            return
+        }
+        if let index = annotationItems.firstIndex(where: { $0.annotation === selectedAnnotation }) {
+            annotationTable.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+            annotationTable.scrollRowToVisible(index)
         }
     }
 
-    private func appendLog(_ text: String) {
-        resultView.string += resultView.string.isEmpty ? text : "\n\(text)"
-        resultView.scrollToEndOfDocument(nil)
+    @objc private func editSelectedAnnotation(_ sender: Any?) {
+        if selectedAnnotation == nil, annotationTable.selectedRow >= 0 {
+            tableViewSelectionDidChange(Notification(name: NSTableView.selectionDidChangeNotification, object: annotationTable))
+        }
+        guard let annotation = selectedAnnotation, let page = selectedAnnotationPage else { return }
+        edit(annotation, on: page)
+    }
+
+    @objc private func deleteSelectedAnnotation(_ sender: Any?) {
+        guard let annotation = selectedAnnotation, let page = selectedAnnotationPage else { return }
+        page.removeAnnotation(annotation)
+        undoStack.append(.remove([(page, annotation)]))
+        selectedAnnotation = nil
+        selectedAnnotationPage = nil
+        refreshAnnotationList()
+    }
+
+    private func edit(_ annotation: PDFAnnotation, on page: PDFPage) {
+        let current = annotation.contents ?? ""
+        let value = prompt("주석 수정", message: "주석 내용을 수정합니다.", defaultValue: current)
+        annotation.contents = value
+        if annotation.type == "FreeText" {
+            annotation.font = .systemFont(ofSize: 13)
+        }
+        selectAnnotation(annotation, on: page)
+        refreshAnnotationList()
+    }
+
+    private func undoLastAction() {
+        guard let action = undoStack.popLast() else { return }
+        switch action {
+        case .add(let annotations):
+            annotations.forEach { page, annotation in page.removeAnnotation(annotation) }
+        case .remove(let annotations):
+            annotations.forEach { page, annotation in page.addAnnotation(annotation) }
+        }
+        selectedAnnotation = nil
+        selectedAnnotationPage = nil
+        refreshAnnotationList()
+        statusLabel.stringValue = "되돌림"
     }
 
     private func centeredBounds(on page: PDFPage) -> NSRect {
         let pageBounds = page.bounds(for: .mediaBox)
         return NSRect(x: pageBounds.midX - 90, y: pageBounds.midY - 24, width: 180, height: 48)
+    }
+
+    private func centeredBounds(around viewPoint: NSPoint, on page: PDFPage) -> NSRect {
+        let pagePoint = pdfView.convert(viewPoint, to: page)
+        return NSRect(x: pagePoint.x - 90, y: pagePoint.y - 24, width: 180, height: 48)
     }
 
     private func updateControls() {
@@ -496,20 +785,96 @@ final class DocumentWindowController: NSWindowController {
         pageLabel.stringValue = "\(current) / \(document.pageCount)"
     }
 
-    private func prompt(_ title: String, message: String) -> String {
+    private func prompt(_ title: String, message: String, defaultValue: String = "") -> String {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+        input.stringValue = defaultValue
         alert.accessoryView = input
         alert.addButton(withTitle: "확인")
         alert.addButton(withTitle: "취소")
-        return alert.runModal() == .alertFirstButtonReturn ? input.stringValue : ""
+        return alert.runModal() == .alertFirstButtonReturn ? input.stringValue : defaultValue
     }
 
     private func showAlert(_ message: String) {
         let alert = NSAlert()
         alert.messageText = message
         alert.runModal()
+    }
+}
+
+extension DocumentWindowController: AnnotatingPDFViewDelegate {
+    fileprivate func pdfView(_ pdfView: AnnotatingPDFView, didSelect annotation: PDFAnnotation, on page: PDFPage) {
+        selectAnnotation(annotation, on: page)
+    }
+
+    fileprivate func pdfView(_ pdfView: AnnotatingPDFView, didRequestEdit annotation: PDFAnnotation, on page: PDFPage) {
+        edit(annotation, on: page)
+    }
+
+    fileprivate func pdfView(_ pdfView: AnnotatingPDFView, didClickEmptyPageAt viewPoint: NSPoint) -> Bool {
+        switch selectedTool {
+        case .textBox:
+            addTextBox(at: viewPoint)
+            return true
+        case .arrowTextBox:
+            addArrowTextBox(at: viewPoint)
+            return true
+        default:
+            selectedAnnotation = nil
+            selectedAnnotationPage = nil
+            syncTableSelection()
+            return false
+        }
+    }
+
+    fileprivate func pdfViewDidRequestUndo(_ pdfView: AnnotatingPDFView) {
+        undoLastAction()
+    }
+
+    fileprivate func pdfViewDidRequestDelete(_ pdfView: AnnotatingPDFView) {
+        deleteSelectedAnnotation(nil)
+    }
+
+    fileprivate func pdfViewDidRequestEditSelected(_ pdfView: AnnotatingPDFView) {
+        editSelectedAnnotation(nil)
+    }
+}
+
+extension DocumentWindowController: NSTableViewDataSource, NSTableViewDelegate {
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        annotationItems.count
+    }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard annotationItems.indices.contains(row), let identifier = tableColumn?.identifier else { return nil }
+        let item = annotationItems[row]
+        let cell = NSTableCellView()
+        let text = NSTextField(labelWithString: "")
+        text.lineBreakMode = .byTruncatingTail
+        text.font = .systemFont(ofSize: 12)
+        text.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(text)
+        NSLayoutConstraint.activate([
+            text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+            text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+            text.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+        ])
+
+        switch identifier.rawValue {
+        case "page": text.stringValue = item.pageText
+        case "type": text.stringValue = item.typeText
+        default: text.stringValue = item.summary
+        }
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        let row = annotationTable.selectedRow
+        guard annotationItems.indices.contains(row),
+              let document = pdfView.document,
+              let page = document.page(at: annotationItems[row].pageIndex) else { return }
+        selectAnnotation(annotationItems[row].annotation, on: page)
     }
 }
