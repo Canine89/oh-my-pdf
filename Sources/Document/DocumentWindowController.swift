@@ -127,16 +127,47 @@ private protocol AnnotatingPDFViewDelegate: AnyObject {
     func pdfViewDidRequestEditSelected(_ pdfView: AnnotatingPDFView)
 }
 
+private final class AnnotationTableView: NSTableView {
+    weak var keyDelegate: AnnotationTableViewKeyDelegate?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        if event.clickCount >= 2 {
+            keyDelegate?.annotationTableDidRequestEdit(self)
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 51 || event.keyCode == 117 {
+            keyDelegate?.annotationTableDidRequestDelete(self)
+            return
+        }
+        if event.keyCode == 36 {
+            keyDelegate?.annotationTableDidRequestEdit(self)
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
+private protocol AnnotationTableViewKeyDelegate: AnyObject {
+    func annotationTableDidRequestDelete(_ tableView: AnnotationTableView)
+    func annotationTableDidRequestEdit(_ tableView: AnnotationTableView)
+}
+
 final class DocumentWindowController: NSWindowController {
     private let pdfView = AnnotatingPDFView()
     private let statusLabel = NSTextField(labelWithString: "PDF를 열어 주세요.")
     private let pageLabel = NSTextField(labelWithString: "0 / 0")
-    private let annotationTable = NSTableView()
+    private let annotationTable = AnnotationTableView()
     private let commentCountLabel = NSTextField(labelWithString: "0개")
     private let selectedCommentTitle = NSTextField(labelWithString: "선택한 주석 없음")
     private let selectedCommentEditor = NSTextView()
     private let inlineEditorScrollView = NSScrollView()
     private let inlineEditorTextView = NSTextView()
+    private let listInlineEditor = NSTextField()
     private let apiKeyField = NSSecureTextField()
     private let glossaryLabel = NSTextField(labelWithString: "용어집 없음")
     private let strengthPopup = NSPopUpButton()
@@ -154,6 +185,8 @@ final class DocumentWindowController: NSWindowController {
     private var undoStack: [UndoAction] = []
     private weak var inlineEditingAnnotation: PDFAnnotation?
     private weak var inlineEditingPage: PDFPage?
+    private weak var listEditingAnnotation: PDFAnnotation?
+    private weak var listEditingPage: PDFPage?
     private let correctionEngine = CorrectionEngine()
 
     init() {
@@ -193,6 +226,7 @@ final class DocumentWindowController: NSWindowController {
         pdfView.displaysPageBreaks = true
         pdfView.backgroundColor = NSColor(srgbRed: 0.94, green: 0.94, blue: 0.94, alpha: 1)
         setupInlineEditor()
+        setupListInlineEditor()
 
         [toolbar, body, statusBar].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
@@ -306,6 +340,7 @@ final class DocumentWindowController: NSWindowController {
         annotationTable.selectionHighlightStyle = .none
         annotationTable.delegate = self
         annotationTable.dataSource = self
+        annotationTable.keyDelegate = self
         annotationTable.target = self
         annotationTable.doubleAction = #selector(editSelectedAnnotation(_:))
         addTableColumn("comment", width: 276)
@@ -411,6 +446,7 @@ final class DocumentWindowController: NSWindowController {
 
     @objc func openDocument(_ sender: Any?) {
         finishInlineEdit()
+        finishListInlineEdit()
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.pdf]
         panel.allowsMultipleSelection = false
@@ -448,6 +484,7 @@ final class DocumentWindowController: NSWindowController {
 
     @objc func saveDocument(_ sender: Any?) {
         finishInlineEdit()
+        finishListInlineEdit()
         guard let url = documentURL else {
             saveDocumentAs(sender)
             return
@@ -461,6 +498,7 @@ final class DocumentWindowController: NSWindowController {
 
     @objc func saveDocumentAs(_ sender: Any?) {
         finishInlineEdit()
+        finishListInlineEdit()
         guard let document = pdfView.document else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
@@ -764,6 +802,9 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private func syncTableSelection() {
+        if listEditingAnnotation == nil {
+            listInlineEditor.isHidden = true
+        }
         guard let selectedAnnotation else {
             annotationTable.deselectAll(nil)
             updateSelectedCommentPanel()
@@ -780,8 +821,7 @@ final class DocumentWindowController: NSWindowController {
         if selectedAnnotation == nil, annotationTable.selectedRow >= 0 {
             tableViewSelectionDidChange(Notification(name: NSTableView.selectionDidChangeNotification, object: annotationTable))
         }
-        guard let annotation = selectedAnnotation, let page = selectedAnnotationPage else { return }
-        edit(annotation, on: page)
+        beginListInlineEditForSelectedRow()
     }
 
     @objc private func saveSelectedAnnotationNote(_ sender: Any?) {
@@ -798,6 +838,7 @@ final class DocumentWindowController: NSWindowController {
 
     @objc private func deleteSelectedAnnotation(_ sender: Any?) {
         finishInlineEdit()
+        finishListInlineEdit()
         guard let annotation = selectedAnnotation, let page = selectedAnnotationPage else { return }
         page.removeAnnotation(annotation)
         undoStack.append(.remove([(page, annotation)]))
@@ -860,6 +901,62 @@ final class DocumentWindowController: NSWindowController {
         inlineEditorTextView.delegate = self
         inlineEditorScrollView.documentView = inlineEditorTextView
         pdfView.addSubview(inlineEditorScrollView)
+    }
+
+    private func setupListInlineEditor() {
+        listInlineEditor.isHidden = true
+        listInlineEditor.isBordered = true
+        listInlineEditor.isBezeled = true
+        listInlineEditor.drawsBackground = true
+        listInlineEditor.font = .systemFont(ofSize: 12)
+        listInlineEditor.delegate = self
+        listInlineEditor.target = self
+        listInlineEditor.action = #selector(commitListInlineEdit(_:))
+        annotationTable.addSubview(listInlineEditor)
+    }
+
+    private func beginListInlineEditForSelectedRow() {
+        finishInlineEdit()
+        let row = annotationTable.selectedRow
+        guard annotationItems.indices.contains(row),
+              let document = pdfView.document,
+              let page = document.page(at: annotationItems[row].pageIndex) else { return }
+
+        let item = annotationItems[row]
+        selectedAnnotation = item.annotation
+        selectedAnnotationPage = page
+        listEditingAnnotation = item.annotation
+        listEditingPage = page
+
+        let rowRect = annotationTable.rect(ofRow: row)
+        let editorFrame = NSRect(x: rowRect.minX + 54,
+                                 y: rowRect.minY + 9,
+                                 width: max(120, rowRect.width - 66),
+                                 height: 24)
+        listInlineEditor.frame = editorFrame
+        listInlineEditor.stringValue = item.annotation.contents ?? ""
+        listInlineEditor.isHidden = false
+        annotationTable.scrollRowToVisible(row)
+        window?.makeFirstResponder(listInlineEditor)
+        listInlineEditor.selectText(nil)
+        statusLabel.stringValue = "주석 목록에서 메모 편집 중"
+    }
+
+    @objc private func commitListInlineEdit(_ sender: Any?) {
+        finishListInlineEdit()
+    }
+
+    private func finishListInlineEdit() {
+        guard let annotation = listEditingAnnotation else { return }
+        annotation.contents = listInlineEditor.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if annotation.type == "FreeText" {
+            annotation.font = .systemFont(ofSize: 13)
+        }
+        listEditingAnnotation = nil
+        listEditingPage = nil
+        listInlineEditor.isHidden = true
+        refreshAnnotationList()
+        statusLabel.stringValue = "주석 메모 저장됨"
     }
 
     private func beginInlineEdit(_ annotation: PDFAnnotation, on page: PDFPage) {
@@ -991,6 +1088,27 @@ extension DocumentWindowController: NSTextViewDelegate {
         if notification.object as AnyObject? === inlineEditorTextView {
             finishInlineEdit()
         }
+    }
+}
+
+extension DocumentWindowController: NSTextFieldDelegate {
+    func controlTextDidEndEditing(_ obj: Notification) {
+        if obj.object as AnyObject? === listInlineEditor {
+            finishListInlineEdit()
+        }
+    }
+}
+
+extension DocumentWindowController: AnnotationTableViewKeyDelegate {
+    fileprivate func annotationTableDidRequestDelete(_ tableView: AnnotationTableView) {
+        if selectedAnnotation == nil, annotationTable.selectedRow >= 0 {
+            tableViewSelectionDidChange(Notification(name: NSTableView.selectionDidChangeNotification, object: annotationTable))
+        }
+        deleteSelectedAnnotation(nil)
+    }
+
+    fileprivate func annotationTableDidRequestEdit(_ tableView: AnnotationTableView) {
+        beginListInlineEditForSelectedRow()
     }
 }
 
