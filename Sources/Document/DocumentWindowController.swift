@@ -39,36 +39,60 @@ final class DocumentWindowController: NSWindowController {
     private func setupUI() {
         guard let contentView = window?.contentView else { return }
 
-        let root = NSStackView()
-        root.orientation = .vertical
-        root.spacing = 0
-        root.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(root)
-        NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            root.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            root.topAnchor.constraint(equalTo: contentView.topAnchor),
-            root.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-        ])
-
-        root.addArrangedSubview(makeToolbar())
-
-        let split = NSSplitView()
-        split.isVertical = true
-        split.dividerStyle = .thin
-        split.translatesAutoresizingMaskIntoConstraints = false
-        root.addArrangedSubview(split)
+        let toolbar = makeToolbar()
+        let statusBar = makeStatusBar()
+        let body = NSView()
+        let sidePanel = makeSidePanel()
+        let divider = NSBox()
+        divider.boxType = .separator
 
         pdfView.autoScales = true
-        pdfView.displayMode = .singlePageContinuous
+        pdfView.displayBox = .cropBox
+        pdfView.displayMode = .singlePage
         pdfView.displayDirection = .vertical
-        pdfView.backgroundColor = NSColor.windowBackgroundColor
-        split.addArrangedSubview(pdfView)
-        split.addArrangedSubview(makeSidePanel())
-        split.setHoldingPriority(.defaultLow, forSubviewAt: 0)
-        split.setHoldingPriority(.required, forSubviewAt: 1)
+        pdfView.displaysPageBreaks = true
+        pdfView.backgroundColor = NSColor(srgbRed: 0.94, green: 0.94, blue: 0.94, alpha: 1)
 
-        root.addArrangedSubview(makeStatusBar())
+        [toolbar, body, statusBar].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview($0)
+        }
+        [pdfView, divider, sidePanel].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            body.addSubview($0)
+        }
+
+        NSLayoutConstraint.activate([
+            toolbar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            toolbar.topAnchor.constraint(equalTo: contentView.topAnchor),
+
+            body.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            body.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            body.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+
+            statusBar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            statusBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            statusBar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            sidePanel.topAnchor.constraint(equalTo: body.topAnchor),
+            sidePanel.trailingAnchor.constraint(equalTo: body.trailingAnchor),
+            sidePanel.bottomAnchor.constraint(equalTo: body.bottomAnchor),
+            sidePanel.widthAnchor.constraint(equalToConstant: 340),
+
+            divider.topAnchor.constraint(equalTo: body.topAnchor),
+            divider.trailingAnchor.constraint(equalTo: sidePanel.leadingAnchor),
+            divider.bottomAnchor.constraint(equalTo: body.bottomAnchor),
+            divider.widthAnchor.constraint(equalToConstant: 1),
+
+            pdfView.leadingAnchor.constraint(equalTo: body.leadingAnchor),
+            pdfView.topAnchor.constraint(equalTo: body.topAnchor),
+            pdfView.trailingAnchor.constraint(equalTo: divider.leadingAnchor),
+            pdfView.bottomAnchor.constraint(equalTo: body.bottomAnchor),
+
+            body.heightAnchor.constraint(greaterThanOrEqualToConstant: 420)
+        ])
         updateControls()
     }
 
@@ -115,7 +139,6 @@ final class DocumentWindowController: NSWindowController {
         panel.spacing = 10
         panel.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
         panel.translatesAutoresizingMaskIntoConstraints = false
-        panel.widthAnchor.constraint(equalToConstant: 340).isActive = true
 
         let title = NSTextField(labelWithString: "AI 교정")
         title.font = .boldSystemFont(ofSize: 15)
@@ -206,6 +229,17 @@ final class DocumentWindowController: NSWindowController {
         }
         documentURL = url
         pdfView.document = document
+        if let firstPage = document.page(at: 0) {
+            pdfView.go(to: firstPage)
+        }
+        pdfView.autoScales = true
+        pdfView.layoutDocumentView()
+        DispatchQueue.main.async { [weak self] in
+            self?.pdfView.autoScales = true
+            self?.pdfView.scaleFactor = self?.pdfView.scaleFactorForSizeToFit ?? 1
+            self?.pdfView.layoutDocumentView()
+            self?.updateControls()
+        }
         window?.title = "\(Brand.name) - \(url.lastPathComponent)"
         statusLabel.stringValue = "열림: \(url.path)"
         updateControls()
