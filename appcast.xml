@@ -6,16 +6,16 @@
     <description>oh-my-pdf 업데이트</description>
     <language>ko</language>
     <item>
-      <title>0.1.9</title>
-      <pubDate>Mon, 22 Jun 2026 14:43:05 +0000</pubDate>
-      <sparkle:version>10</sparkle:version>
-      <sparkle:shortVersionString>0.1.9</sparkle:shortVersionString>
+      <title>0.1.10</title>
+      <pubDate>Mon, 22 Jun 2026 14:55:12 +0000</pubDate>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>0.1.10</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h2>oh-my-pdf 0.1.9</h2>
+      <description><![CDATA[<h2>oh-my-pdf 0.1.10</h2>
 <ul>
 <li>개선 및 버그 수정</li>
 </ul>]]></description>
-      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.9.zip" type="application/octet-stream" sparkle:edSignature="MrRvApLaLHAOgzduaeJ0NCRvG6sgpVhZPFB45XuCoNPuSOxhVWX1GqUwY7bZjXV+v6bzUvz9zJB++h4R3FpZCg==" length="1142885" />
+      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.10.zip" type="application/octet-stream" sparkle:edSignature="QweFntkG/aC3BDrMhMrM8M5fknOiIeTP+5FDcDaXAae8sCzENdnxbdxoNa334+HpHvAu9JpJYKID7oxecBK7Ag==" length="1145094" />
     </item>
   </channel>
 </rss>
