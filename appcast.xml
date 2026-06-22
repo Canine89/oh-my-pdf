@@ -6,18 +6,20 @@
     <description>oh-my-pdf 업데이트</description>
     <language>ko</language>
     <item>
-      <title>0.1.5</title>
-      <pubDate>Mon, 22 Jun 2026 13:28:46 +0000</pubDate>
-      <sparkle:version>6</sparkle:version>
-      <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
+      <title>0.1.6</title>
+      <pubDate>Mon, 22 Jun 2026 13:35:42 +0000</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>0.1.6</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h2>oh-my-pdf 0.1.5</h2>
+      <description><![CDATA[<h2>oh-my-pdf 0.1.6</h2>
 <ul>
-<li>주석 목록을 Acrobat Reader 댓글 패널처럼 카드형 행으로 개선</li>
-<li>선택한 주석의 메모를 왼쪽 패널에서 바로 수정하고 저장할 수 있도록 개선</li>
-<li>선택된 주석 행의 강조 표시와 가독성 개선</li>
+<li>텍스트 박스와 화살표 메모를 클릭한 PDF 위치에 생성하도록 개선</li>
+<li>텍스트 박스 생성 직후 PDF 위에서 바로 인라인 편집하도록 개선</li>
+<li>텍스트 박스 더블클릭/수정 시 모달 대신 PDF 위 인라인 편집 사용</li>
+<li>텍스트 박스 생성 후 자동으로 선택 모드로 돌아가도록 개선</li>
+<li>비어 있는 텍스트 박스는 편집 종료 시 자동 제거</li>
 </ul>]]></description>
-      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.5.zip" type="application/octet-stream" sparkle:edSignature="nVsEEYtgO+sMezRX7P/FwfTbbrId0v7sEEN/PooP4kGQtmwo2+XI+/53/J3s5JE0e0WP0iGsd3aacb7zEK+iAw==" length="1136460" />
+      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.6.zip" type="application/octet-stream" sparkle:edSignature="H1kwbzrme7oOcaOof0bxRZksU1Lu25LW8SlYvCBVNyDan92r/iOL36AnKjg6OTYIC9XafgQEDpTnZsvwpnTPDA==" length="1139524" />
     </item>
   </channel>
 </rss>
