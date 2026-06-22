@@ -6,17 +6,18 @@
     <description>oh-my-pdf 업데이트</description>
     <language>ko</language>
     <item>
-      <title>0.1.1</title>
-      <pubDate>Mon, 22 Jun 2026 13:03:57 +0000</pubDate>
-      <sparkle:version>2</sparkle:version>
-      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+      <title>0.1.2</title>
+      <pubDate>Mon, 22 Jun 2026 13:09:24 +0000</pubDate>
+      <sparkle:version>3</sparkle:version>
+      <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h2>oh-my-pdf 0.1.1</h2>
+      <description><![CDATA[<h2>oh-my-pdf 0.1.2</h2>
 <ul>
-<li>Sparkle appcast와 업데이트 ZIP 게시</li>
-<li>자동 업데이트 서명 계정을 `oh-my-pdf`로 고정</li>
+<li>DMG 설치 안내 문서 추가</li>
+<li>`oh-my-pdf` 고정 자체서명 인증서 생성 스크립트 추가</li>
+<li>릴리스 빌드가 고정 인증서로 재서명되도록 배포 스크립트 정리</li>
 </ul>]]></description>
-      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.1.zip" type="application/octet-stream" sparkle:edSignature="iTtkhZr+QfE4Fh6ttBjZqQAjixkff1eXKN+rVw5OqZtyHlQCAtd1mzD5GCoWey/B7lztK3tI46OJmXdZZwEfBA==" length="1108150" />
+      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.2.zip" type="application/octet-stream" sparkle:edSignature="zgoX8xgEJGQnJZomQqgpqzs/yChT3V7CJAOQ8eIFtlBJrGFC+QNIz4aqybvTnVLJpvCJ8nQ+HIZeLM+MjAAKAg==" length="1115671" />
     </item>
   </channel>
 </rss>
