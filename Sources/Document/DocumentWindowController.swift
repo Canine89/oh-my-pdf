@@ -173,14 +173,13 @@ private protocol AnnotationTableViewKeyDelegate: AnyObject {
 
 private final class AnnotationCellView: NSTableCellView {
     let summaryField = NSTextField()
-    var onEditRequested: (() -> Void)?
+    var onMouseDown: ((AnnotationCellView, NSEvent) -> Bool)?
 
     private let container = NSView()
     private let pageBadge = NSTextField(labelWithString: "")
     private let typeField = NSTextField(labelWithString: "")
     private let editingBadge = NSTextField(labelWithString: "수정 중")
     private var isEditingMode = false
-    private var lastClickTimestamp: TimeInterval = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -192,13 +191,20 @@ private final class AnnotationCellView: NSTableCellView {
         setup()
     }
 
-    override func mouseDown(with event: NSEvent) {
-        let isManualDoubleClick = event.timestamp - lastClickTimestamp <= NSEvent.doubleClickInterval
-        lastClickTimestamp = event.timestamp
-        super.mouseDown(with: event)
-        if !isEditingMode, event.clickCount >= 2 || isManualDoubleClick {
-            onEditRequested?()
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard super.hitTest(point) != nil else { return nil }
+        if isEditingMode {
+            let summaryPoint = convert(point, to: summaryField)
+            if summaryField.bounds.contains(summaryPoint) {
+                return summaryField
+            }
         }
+        return self
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if onMouseDown?(self, event) == true { return }
+        super.mouseDown(with: event)
     }
 
     private func setup() {
@@ -333,6 +339,8 @@ final class DocumentWindowController: NSWindowController {
     private weak var inlineEditingPage: PDFPage?
     private weak var listEditingAnnotation: PDFAnnotation?
     private weak var listEditingField: NSTextField?
+    private weak var lastClickedListAnnotation: PDFAnnotation?
+    private var lastClickedListTimestamp: TimeInterval = 0
     private let correctionEngine = CorrectionEngine()
 
     init() {
@@ -935,7 +943,6 @@ final class DocumentWindowController: NSWindowController {
             annotationTable.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
             annotationTable.scrollRowToVisible(index)
         }
-        annotationTable.reloadData()
     }
 
     @objc private func editSelectedAnnotation(_ sender: Any?) {
@@ -1054,6 +1061,25 @@ final class DocumentWindowController: NSWindowController {
         field.isSelectable = true
         window?.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
+    }
+
+    private func handleAnnotationListMouseDown(on cell: AnnotationCellView, event: NSEvent) -> Bool {
+        let row = annotationTable.row(for: cell)
+        guard annotationItems.indices.contains(row) else { return false }
+
+        let item = annotationItems[row]
+        let isManualDoubleClick = lastClickedListAnnotation === item.annotation
+            && event.timestamp - lastClickedListTimestamp <= NSEvent.doubleClickInterval
+        lastClickedListAnnotation = item.annotation
+        lastClickedListTimestamp = event.timestamp
+
+        annotationTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        window?.makeFirstResponder(annotationTable)
+
+        if event.clickCount >= 2 || isManualDoubleClick {
+            beginListInlineEditForSelectedRow()
+        }
+        return true
     }
 
     private func beginInlineEdit(_ annotation: PDFAnnotation, on page: PDFPage) {
@@ -1234,12 +1260,8 @@ extension DocumentWindowController: NSTableViewDataSource, NSTableViewDelegate {
             target: self,
             action: #selector(commitListInlineEdit(_:))
         )
-        cell.onEditRequested = { [weak self, weak cell] in
-            guard let self, let cell else { return }
-            let row = self.annotationTable.row(for: cell)
-            guard self.annotationItems.indices.contains(row) else { return }
-            self.annotationTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-            self.beginListInlineEditForSelectedRow()
+        cell.onMouseDown = { [weak self] cell, event in
+            self?.handleAnnotationListMouseDown(on: cell, event: event) ?? false
         }
         if isEditing {
             listEditingField = cell.summaryField
@@ -1261,6 +1283,5 @@ extension DocumentWindowController: NSTableViewDataSource, NSTableViewDelegate {
               let document = pdfView.document,
               let page = document.page(at: annotationItems[row].pageIndex) else { return }
         selectAnnotation(annotationItems[row].annotation, on: page)
-        annotationTable.reloadData()
     }
 }
