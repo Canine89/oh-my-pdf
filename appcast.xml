@@ -6,20 +6,18 @@
     <description>oh-my-pdf 업데이트</description>
     <language>ko</language>
     <item>
-      <title>0.1.6</title>
-      <pubDate>Mon, 22 Jun 2026 13:35:42 +0000</pubDate>
-      <sparkle:version>7</sparkle:version>
-      <sparkle:shortVersionString>0.1.6</sparkle:shortVersionString>
+      <title>0.1.7</title>
+      <pubDate>Mon, 22 Jun 2026 14:32:48 +0000</pubDate>
+      <sparkle:version>8</sparkle:version>
+      <sparkle:shortVersionString>0.1.7</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h2>oh-my-pdf 0.1.6</h2>
+      <description><![CDATA[<h2>oh-my-pdf 0.1.7</h2>
 <ul>
-<li>텍스트 박스와 화살표 메모를 클릭한 PDF 위치에 생성하도록 개선</li>
-<li>텍스트 박스 생성 직후 PDF 위에서 바로 인라인 편집하도록 개선</li>
-<li>텍스트 박스 더블클릭/수정 시 모달 대신 PDF 위 인라인 편집 사용</li>
-<li>텍스트 박스 생성 후 자동으로 선택 모드로 돌아가도록 개선</li>
-<li>비어 있는 텍스트 박스는 편집 종료 시 자동 제거</li>
+<li>주석 목록 행 더블클릭 시 별도 폼 없이 목록 안에서 바로 메모 수정</li>
+<li>주석 목록에서 Backspace/Delete 키로 선택 주석 삭제</li>
+<li>주석 목록 더블클릭 감지를 안정화</li>
 </ul>]]></description>
-      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.6.zip" type="application/octet-stream" sparkle:edSignature="H1kwbzrme7oOcaOof0bxRZksU1Lu25LW8SlYvCBVNyDan92r/iOL36AnKjg6OTYIC9XafgQEDpTnZsvwpnTPDA==" length="1139524" />
+      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.7.zip" type="application/octet-stream" sparkle:edSignature="50G8Y1fv0ks6pP1D+023w0QGD5+btNFn/nIX+h7y0XNomTxfFg2mk48IPUo1MV/U+IHQ+8XECmVpsWut98JoBg==" length="1141951" />
     </item>
   </channel>
 </rss>
