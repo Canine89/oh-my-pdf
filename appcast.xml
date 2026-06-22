@@ -6,18 +6,20 @@
     <description>oh-my-pdf 업데이트</description>
     <language>ko</language>
     <item>
-      <title>0.1.3</title>
-      <pubDate>Mon, 22 Jun 2026 13:16:04 +0000</pubDate>
-      <sparkle:version>4</sparkle:version>
-      <sparkle:shortVersionString>0.1.3</sparkle:shortVersionString>
+      <title>0.1.4</title>
+      <pubDate>Mon, 22 Jun 2026 13:23:45 +0000</pubDate>
+      <sparkle:version>5</sparkle:version>
+      <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h2>oh-my-pdf 0.1.3</h2>
+      <description><![CDATA[<h2>oh-my-pdf 0.1.4</h2>
 <ul>
-<li>PDF를 열었을 때 빈 화면처럼 보이던 레이아웃 문제 수정</li>
-<li>PDF 뷰어를 단일 페이지 맞춤 보기로 변경</li>
-<li>AI 교정 패널이 항상 오른쪽에 보이도록 레이아웃 고정</li>
+<li>왼쪽 주석 목록 추가: 모든 주석을 페이지 번호와 함께 표시</li>
+<li>주석 클릭/목록 선택 후 수정 및 삭제 지원</li>
+<li>주석 도구 버튼을 토글 상태로 표시</li>
+<li>AI 맞춤법 교정 결과를 별도 결과 패널 없이 `[AI] 원문 -&gt; 교정문` 하이라이트 메모로 표시</li>
+<li>Command+Z와 Control+Z 되돌리기, Delete 삭제, Return 수정 단축키 지원</li>
 </ul>]]></description>
-      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.3.zip" type="application/octet-stream" sparkle:edSignature="/TNEiXJEpbfs0A0GBeFEAYM7sGAbMZv9NZcYPpIm+tQNnRPgjTO+tHOYiuiUczRmPY9uEOr89lWsKl2Ls1pxBA==" length="1118470" />
+      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.4.zip" type="application/octet-stream" sparkle:edSignature="b6dEnadP4Pf1iJLwWFC4OoaYBve05jLMUOpr+o3pduBMcfxB1M/YcsXj2eaSAazQjPfTZEmw0Pv07KfGCYWkCw==" length="1133313" />
     </item>
   </channel>
 </rss>
