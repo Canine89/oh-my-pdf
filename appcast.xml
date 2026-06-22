@@ -6,18 +6,18 @@
     <description>oh-my-pdf 업데이트</description>
     <language>ko</language>
     <item>
-      <title>0.1.2</title>
-      <pubDate>Mon, 22 Jun 2026 13:09:24 +0000</pubDate>
-      <sparkle:version>3</sparkle:version>
-      <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
+      <title>0.1.3</title>
+      <pubDate>Mon, 22 Jun 2026 13:16:04 +0000</pubDate>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>0.1.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h2>oh-my-pdf 0.1.2</h2>
+      <description><![CDATA[<h2>oh-my-pdf 0.1.3</h2>
 <ul>
-<li>DMG 설치 안내 문서 추가</li>
-<li>`oh-my-pdf` 고정 자체서명 인증서 생성 스크립트 추가</li>
-<li>릴리스 빌드가 고정 인증서로 재서명되도록 배포 스크립트 정리</li>
+<li>PDF를 열었을 때 빈 화면처럼 보이던 레이아웃 문제 수정</li>
+<li>PDF 뷰어를 단일 페이지 맞춤 보기로 변경</li>
+<li>AI 교정 패널이 항상 오른쪽에 보이도록 레이아웃 고정</li>
 </ul>]]></description>
-      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.2.zip" type="application/octet-stream" sparkle:edSignature="zgoX8xgEJGQnJZomQqgpqzs/yChT3V7CJAOQ8eIFtlBJrGFC+QNIz4aqybvTnVLJpvCJ8nQ+HIZeLM+MjAAKAg==" length="1115671" />
+      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.3.zip" type="application/octet-stream" sparkle:edSignature="/TNEiXJEpbfs0A0GBeFEAYM7sGAbMZv9NZcYPpIm+tQNnRPgjTO+tHOYiuiUczRmPY9uEOr89lWsKl2Ls1pxBA==" length="1118470" />
     </item>
   </channel>
 </rss>
