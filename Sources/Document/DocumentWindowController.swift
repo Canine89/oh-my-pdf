@@ -132,6 +132,9 @@ final class DocumentWindowController: NSWindowController {
     private let statusLabel = NSTextField(labelWithString: "PDF를 열어 주세요.")
     private let pageLabel = NSTextField(labelWithString: "0 / 0")
     private let annotationTable = NSTableView()
+    private let commentCountLabel = NSTextField(labelWithString: "0개")
+    private let selectedCommentTitle = NSTextField(labelWithString: "선택한 주석 없음")
+    private let selectedCommentEditor = NSTextView()
     private let apiKeyField = NSSecureTextField()
     private let glossaryLabel = NSTextField(labelWithString: "용어집 없음")
     private let strengthPopup = NSPopUpButton()
@@ -276,28 +279,53 @@ final class DocumentWindowController: NSWindowController {
 
         let title = NSTextField(labelWithString: "주석 목록")
         title.font = .boldSystemFont(ofSize: 15)
-        panel.addArrangedSubview(title)
+        let titleRow = NSStackView()
+        titleRow.orientation = .horizontal
+        titleRow.alignment = .centerY
+        titleRow.spacing = 8
+        titleRow.addArrangedSubview(title)
+        let titleSpacer = NSView()
+        titleSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        titleRow.addArrangedSubview(titleSpacer)
+        commentCountLabel.textColor = .secondaryLabelColor
+        commentCountLabel.font = .systemFont(ofSize: 12)
+        titleRow.addArrangedSubview(commentCountLabel)
+        panel.addArrangedSubview(titleRow)
 
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
+        scroll.borderType = .noBorder
         annotationTable.headerView = nil
-        annotationTable.rowHeight = 24
+        annotationTable.rowHeight = 64
+        annotationTable.intercellSpacing = NSSize(width: 0, height: 6)
+        annotationTable.selectionHighlightStyle = .none
         annotationTable.delegate = self
         annotationTable.dataSource = self
         annotationTable.target = self
         annotationTable.doubleAction = #selector(editSelectedAnnotation(_:))
-        addTableColumn("page", width: 42)
-        addTableColumn("type", width: 76)
-        addTableColumn("summary", width: 170)
+        addTableColumn("comment", width: 276)
         scroll.documentView = annotationTable
-        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
         panel.addArrangedSubview(scroll)
+
+        selectedCommentTitle.font = .boldSystemFont(ofSize: 13)
+        selectedCommentTitle.textColor = .secondaryLabelColor
+        panel.addArrangedSubview(selectedCommentTitle)
+
+        let noteScroll = NSScrollView()
+        noteScroll.hasVerticalScroller = true
+        noteScroll.borderType = .bezelBorder
+        selectedCommentEditor.font = .systemFont(ofSize: 13)
+        selectedCommentEditor.isEditable = true
+        selectedCommentEditor.string = ""
+        noteScroll.documentView = selectedCommentEditor
+        noteScroll.heightAnchor.constraint(equalToConstant: 96).isActive = true
+        panel.addArrangedSubview(noteScroll)
 
         let actionRow = NSStackView()
         actionRow.orientation = .horizontal
         actionRow.spacing = 8
-        addButton("수정", action: #selector(editSelectedAnnotation(_:)), to: actionRow)
+        addButton("메모 저장", action: #selector(saveSelectedAnnotationNote(_:)), to: actionRow)
         addButton("삭제", action: #selector(deleteSelectedAnnotation(_:)), to: actionRow)
         panel.addArrangedSubview(actionRow)
 
@@ -350,6 +378,7 @@ final class DocumentWindowController: NSWindowController {
     private func addTableColumn(_ identifier: String, width: CGFloat) {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
         column.width = width
+        column.resizingMask = .autoresizingMask
         annotationTable.addTableColumn(column)
     }
 
@@ -701,8 +730,10 @@ final class DocumentWindowController: NSWindowController {
             }
         }
         annotationItems = items
+        commentCountLabel.stringValue = "\(items.count)개"
         annotationTable.reloadData()
         syncTableSelection()
+        updateSelectedCommentPanel()
     }
 
     private func selectAnnotation(_ annotation: PDFAnnotation, on page: PDFPage) {
@@ -711,17 +742,20 @@ final class DocumentWindowController: NSWindowController {
         pdfView.go(to: page)
         statusLabel.stringValue = "선택한 주석: \(annotation.contents ?? annotation.type ?? "주석")"
         syncTableSelection()
+        updateSelectedCommentPanel()
     }
 
     private func syncTableSelection() {
         guard let selectedAnnotation else {
             annotationTable.deselectAll(nil)
+            updateSelectedCommentPanel()
             return
         }
         if let index = annotationItems.firstIndex(where: { $0.annotation === selectedAnnotation }) {
             annotationTable.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
             annotationTable.scrollRowToVisible(index)
         }
+        annotationTable.reloadData()
     }
 
     @objc private func editSelectedAnnotation(_ sender: Any?) {
@@ -729,7 +763,19 @@ final class DocumentWindowController: NSWindowController {
             tableViewSelectionDidChange(Notification(name: NSTableView.selectionDidChangeNotification, object: annotationTable))
         }
         guard let annotation = selectedAnnotation, let page = selectedAnnotationPage else { return }
-        edit(annotation, on: page)
+        selectAnnotation(annotation, on: page)
+        window?.makeFirstResponder(selectedCommentEditor)
+    }
+
+    @objc private func saveSelectedAnnotationNote(_ sender: Any?) {
+        guard let annotation = selectedAnnotation, let page = selectedAnnotationPage else { return }
+        annotation.contents = selectedCommentEditor.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        if annotation.type == "FreeText" {
+            annotation.font = .systemFont(ofSize: 13)
+        }
+        selectAnnotation(annotation, on: page)
+        refreshAnnotationList()
+        statusLabel.stringValue = "주석 메모 저장됨"
     }
 
     @objc private func deleteSelectedAnnotation(_ sender: Any?) {
@@ -764,6 +810,22 @@ final class DocumentWindowController: NSWindowController {
         selectedAnnotationPage = nil
         refreshAnnotationList()
         statusLabel.stringValue = "되돌림"
+    }
+
+    private func updateSelectedCommentPanel() {
+        guard let annotation = selectedAnnotation,
+              let page = selectedAnnotationPage,
+              let document = pdfView.document else {
+            selectedCommentTitle.stringValue = "선택한 주석 없음"
+            selectedCommentTitle.textColor = .secondaryLabelColor
+            selectedCommentEditor.string = ""
+            return
+        }
+        let pageIndex = document.index(for: page) + 1
+        let item = AnnotationListItem(pageIndex: max(0, pageIndex - 1), annotation: annotation)
+        selectedCommentTitle.stringValue = "\(pageIndex)쪽 · \(item.typeText)"
+        selectedCommentTitle.textColor = .labelColor
+        selectedCommentEditor.string = annotation.contents ?? ""
     }
 
     private func centeredBounds(on page: PDFPage) -> NSRect {
@@ -848,25 +910,65 @@ extension DocumentWindowController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard annotationItems.indices.contains(row), let identifier = tableColumn?.identifier else { return nil }
+        guard annotationItems.indices.contains(row) else { return nil }
         let item = annotationItems[row]
+        let isSelected = selectedAnnotation === item.annotation
         let cell = NSTableCellView()
-        let text = NSTextField(labelWithString: "")
-        text.lineBreakMode = .byTruncatingTail
-        text.font = .systemFont(ofSize: 12)
-        text.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(text)
-        NSLayoutConstraint.activate([
-            text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-            text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-            text.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-        ])
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 6
+        container.layer?.backgroundColor = (isSelected
+            ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.14)
+            : NSColor.controlBackgroundColor).cgColor
+        container.layer?.borderWidth = isSelected ? 2 : 0
+        container.layer?.borderColor = NSColor.selectedContentBackgroundColor.cgColor
+        cell.addSubview(container)
 
-        switch identifier.rawValue {
-        case "page": text.stringValue = item.pageText
-        case "type": text.stringValue = item.typeText
-        default: text.stringValue = item.summary
-        }
+        let pageBadge = NSTextField(labelWithString: item.pageText)
+        pageBadge.alignment = .center
+        pageBadge.font = .boldSystemFont(ofSize: 12)
+        pageBadge.textColor = .white
+        pageBadge.wantsLayer = true
+        pageBadge.layer?.cornerRadius = 9
+        pageBadge.layer?.backgroundColor = (item.typeText == "AI" ? NSColor.systemRed : NSColor.systemBlue).cgColor
+        pageBadge.translatesAutoresizingMaskIntoConstraints = false
+
+        let type = NSTextField(labelWithString: item.typeText)
+        type.font = .boldSystemFont(ofSize: 12)
+        type.textColor = .labelColor
+        type.lineBreakMode = .byTruncatingTail
+        type.translatesAutoresizingMaskIntoConstraints = false
+
+        let summary = NSTextField(labelWithString: item.summary)
+        summary.font = .systemFont(ofSize: 12)
+        summary.textColor = isSelected ? .labelColor : .secondaryLabelColor
+        summary.lineBreakMode = .byTruncatingTail
+        summary.maximumNumberOfLines = 2
+        summary.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(pageBadge)
+        container.addSubview(type)
+        container.addSubview(summary)
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+            container.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+            container.topAnchor.constraint(equalTo: cell.topAnchor, constant: 2),
+            container.bottomAnchor.constraint(equalTo: cell.bottomAnchor, constant: -2),
+
+            pageBadge.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            pageBadge.topAnchor.constraint(equalTo: container.topAnchor, constant: 9),
+            pageBadge.widthAnchor.constraint(equalToConstant: 34),
+            pageBadge.heightAnchor.constraint(equalToConstant: 18),
+
+            type.leadingAnchor.constraint(equalTo: pageBadge.trailingAnchor, constant: 8),
+            type.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            type.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+
+            summary.leadingAnchor.constraint(equalTo: type.leadingAnchor),
+            summary.trailingAnchor.constraint(equalTo: type.trailingAnchor),
+            summary.topAnchor.constraint(equalTo: type.bottomAnchor, constant: 3)
+        ])
         return cell
     }
 
@@ -876,5 +978,6 @@ extension DocumentWindowController: NSTableViewDataSource, NSTableViewDelegate {
               let document = pdfView.document,
               let page = document.page(at: annotationItems[row].pageIndex) else { return }
         selectAnnotation(annotationItems[row].annotation, on: page)
+        annotationTable.reloadData()
     }
 }
