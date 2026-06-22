@@ -2,6 +2,14 @@
 
 macOS용 PDF 교정 도구입니다. PDF를 열어 읽고, 주석을 달고, CSV 용어집과 OpenAI GPT API를 함께 사용해 한국어 맞춤법 교정 후보를 PDF 위에 표시합니다.
 
+## 설치
+
+1. [Releases](../../releases/latest) 에서 `oh-my-pdf-x.x.x.dmg` 를 내려받습니다.
+2. `.dmg` 를 열고 `oh-my-pdf` 아이콘을 `Applications` 폴더로 드래그합니다.
+3. 처음 한 번 macOS 보안 경고가 나오면 시스템 설정 → 개인정보 보호 및 보안에서 `그래도 열기`를 누릅니다.
+
+자세한 순서는 [INSTALL.md](INSTALL.md)를 참고하세요.
+
 ## 요구 환경
 
 - macOS 26 이상
@@ -56,7 +64,15 @@ before,after
 ./scripts/release.sh 0.1.1 --publish
 ```
 
-배포 스크립트는 XcodeGen으로 프로젝트를 재생성하고, Release 앱을 빌드한 뒤 DMG와 ZIP을 만듭니다. Sparkle 자동 업데이트를 쓰려면 Sparkle EdDSA 키를 만든 뒤 `project.yml`의 `SUPublicEDKey`를 채워야 합니다.
+배포 스크립트는 XcodeGen으로 프로젝트를 재생성하고, Release 앱을 자체서명 인증서로 다시 서명한 뒤 DMG와 ZIP을 만듭니다.
+
+처음 한 번 자체서명 인증서를 만듭니다.
+
+```bash
+./scripts/make-signing-cert.sh --backup
+```
+
+Sparkle 자동 업데이트용 EdDSA 공개키는 `project.yml`의 `SUPublicEDKey`에 들어 있습니다.
 
 ## OpenAI API
 

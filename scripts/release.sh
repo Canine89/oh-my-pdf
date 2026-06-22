@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 #
-# oh-my-pdf 배포 빌더.
+# oh-my-pdf 배포 빌더 (DMG 설치 + Sparkle 자동 업데이트 포함).
 #
-#   ./scripts/release.sh
-#   ./scripts/release.sh 0.1.1
-#   ./scripts/release.sh 0.1.1 --publish
+#   ./scripts/release.sh                      # 현재 버전으로 DMG만 빌드(로컬 테스트)
+#   ./scripts/release.sh 0.1.2                # 0.1.2 로 올려 DMG+ZIP+appcast 생성 (게시 X)
+#   ./scripts/release.sh 0.1.2 --publish      # 위 + appcast 푸시 + GitHub Release 업로드
+#
+# 하는 일:
+#   1) (버전 인자 있으면) project.yml 의 MARKETING_VERSION/CURRENT_PROJECT_VERSION 올림
+#   2) project.yml → Xcode 프로젝트 재생성 → Release 빌드
+#   3) 자체서명 인증서로 재서명(업데이트 간 앱 정체성 유지)
+#   4) 사람이 받을 DMG + Sparkle 업데이트용 ZIP 패키징
+#   5) ZIP 을 Sparkle EdDSA 개인키(키체인)로 서명 → appcast.xml 생성
+#   6) --publish: appcast.xml/project.yml/updates ZIP 커밋/푸시 + GitHub Release 업로드
 
 set -euo pipefail
 
@@ -60,17 +68,21 @@ BUILD="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Contents/Info
 MINOS="$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$APP/Contents/Info.plist")"
 
 SIGN_ID="oh-my-pdf"
-if security find-identity 2>/dev/null | grep -q "\"$SIGN_ID\""; then
-  echo "▸ 자체서명 인증서로 재서명 ($SIGN_ID)"
-  codesign --remove-signature "$APP" 2>/dev/null || true
-  codesign --force --deep --sign "$SIGN_ID" "$APP"
-  codesign --verify --deep --strict "$APP"
-else
-  echo "▸ '$SIGN_ID' 인증서 없음 → Xcode 서명 결과 유지"
+echo "▸ 자체서명 인증서로 재서명 ($SIGN_ID)"
+if ! security find-identity 2>/dev/null | grep -q "\"$SIGN_ID\""; then
+  echo "✗ '$SIGN_ID' 코드서명 인증서가 키체인에 없습니다."
+  echo "  먼저 실행하세요: ./scripts/make-signing-cert.sh --backup"
+  echo "  이 인증서를 고정해야 Sparkle 업데이트 후에도 앱 정체성이 유지됩니다."
+  exit 1
 fi
+codesign --remove-signature "$APP" 2>/dev/null || true
+codesign --force --deep --sign "$SIGN_ID" "$APP"
+codesign --verify --deep --strict "$APP" && echo "  서명 확인 ✓"
+codesign -d --requirements - "$APP" 2>&1 | grep -i designated || true
 
-echo "▸ 패키징"
+echo "▸ 패키징 (DMG + ZIP)"
 mkdir -p "$DIST"
+# 사람이 받는 DMG (앱 아이콘을 Applications 폴더로 드래그)
 STAGING="$(mktemp -d)"
 cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
@@ -137,6 +149,15 @@ if [ "$PUBLISH" = "1" ]; then
   git add appcast.xml project.yml "$UPDATE_ZIP"
   git commit -q -m "release: v$VERSION" || true
   git push
-  gh release create "$TAG" "$DMG" "$ZIP" --title "oh-my-pdf $VERSION" --notes "$NOTES_MD" || \
+  gh release create "$TAG" "$DMG" "$ZIP" \
+    --title "oh-my-pdf $VERSION" \
+    --notes "$NOTES_MD
+
+---
+설치: [INSTALL.md](https://github.com/$REPO/blob/main/INSTALL.md) 참고. 이미 설치한 사용자는 앱이 자동으로 업데이트합니다." || \
     gh release upload "$TAG" "$DMG" "$ZIP" --clobber
+  echo "✅ 게시 완료: $TAG"
+else
+  echo
+  echo "다음 단계(게시): ./scripts/release.sh $VERSION --publish"
 fi
