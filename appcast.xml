@@ -6,20 +6,18 @@
     <description>oh-my-pdf 업데이트</description>
     <language>ko</language>
     <item>
-      <title>0.1.4</title>
-      <pubDate>Mon, 22 Jun 2026 13:23:45 +0000</pubDate>
-      <sparkle:version>5</sparkle:version>
-      <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
+      <title>0.1.5</title>
+      <pubDate>Mon, 22 Jun 2026 13:28:46 +0000</pubDate>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h2>oh-my-pdf 0.1.4</h2>
+      <description><![CDATA[<h2>oh-my-pdf 0.1.5</h2>
 <ul>
-<li>왼쪽 주석 목록 추가: 모든 주석을 페이지 번호와 함께 표시</li>
-<li>주석 클릭/목록 선택 후 수정 및 삭제 지원</li>
-<li>주석 도구 버튼을 토글 상태로 표시</li>
-<li>AI 맞춤법 교정 결과를 별도 결과 패널 없이 `[AI] 원문 -&gt; 교정문` 하이라이트 메모로 표시</li>
-<li>Command+Z와 Control+Z 되돌리기, Delete 삭제, Return 수정 단축키 지원</li>
+<li>주석 목록을 Acrobat Reader 댓글 패널처럼 카드형 행으로 개선</li>
+<li>선택한 주석의 메모를 왼쪽 패널에서 바로 수정하고 저장할 수 있도록 개선</li>
+<li>선택된 주석 행의 강조 표시와 가독성 개선</li>
 </ul>]]></description>
-      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.4.zip" type="application/octet-stream" sparkle:edSignature="b6dEnadP4Pf1iJLwWFC4OoaYBve05jLMUOpr+o3pduBMcfxB1M/YcsXj2eaSAazQjPfTZEmw0Pv07KfGCYWkCw==" length="1133313" />
+      <enclosure url="https://raw.githubusercontent.com/Canine89/oh-my-pdf/main/updates/oh-my-pdf-0.1.5.zip" type="application/octet-stream" sparkle:edSignature="nVsEEYtgO+sMezRX7P/FwfTbbrId0v7sEEN/PooP4kGQtmwo2+XI+/53/J3s5JE0e0WP0iGsd3aacb7zEK+iAw==" length="1136460" />
     </item>
   </channel>
 </rss>
