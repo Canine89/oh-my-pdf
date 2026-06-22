@@ -135,6 +135,8 @@ final class DocumentWindowController: NSWindowController {
     private let commentCountLabel = NSTextField(labelWithString: "0개")
     private let selectedCommentTitle = NSTextField(labelWithString: "선택한 주석 없음")
     private let selectedCommentEditor = NSTextView()
+    private let inlineEditorScrollView = NSScrollView()
+    private let inlineEditorTextView = NSTextView()
     private let apiKeyField = NSSecureTextField()
     private let glossaryLabel = NSTextField(labelWithString: "용어집 없음")
     private let strengthPopup = NSPopUpButton()
@@ -150,6 +152,8 @@ final class DocumentWindowController: NSWindowController {
     private var selectedTool: AnnotationTool = .select
     private var toolButtons: [AnnotationTool: NSButton] = [:]
     private var undoStack: [UndoAction] = []
+    private weak var inlineEditingAnnotation: PDFAnnotation?
+    private weak var inlineEditingPage: PDFPage?
     private let correctionEngine = CorrectionEngine()
 
     init() {
@@ -188,6 +192,7 @@ final class DocumentWindowController: NSWindowController {
         pdfView.displayDirection = .vertical
         pdfView.displaysPageBreaks = true
         pdfView.backgroundColor = NSColor(srgbRed: 0.94, green: 0.94, blue: 0.94, alpha: 1)
+        setupInlineEditor()
 
         [toolbar, body, statusBar].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
@@ -405,6 +410,7 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc func openDocument(_ sender: Any?) {
+        finishInlineEdit()
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.pdf]
         panel.allowsMultipleSelection = false
@@ -441,6 +447,7 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc func saveDocument(_ sender: Any?) {
+        finishInlineEdit()
         guard let url = documentURL else {
             saveDocumentAs(sender)
             return
@@ -453,6 +460,7 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc func saveDocumentAs(_ sender: Any?) {
+        finishInlineEdit()
         guard let document = pdfView.document else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
@@ -514,12 +522,14 @@ final class DocumentWindowController: NSWindowController {
         guard let page = targetPage(for: viewPoint) else { return }
         let bounds = viewPoint.map { centeredBounds(around: $0, on: page) } ?? centeredBounds(on: page)
         let annotation = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)
-        annotation.contents = "메모"
+        annotation.contents = ""
         annotation.font = .systemFont(ofSize: 13)
         annotation.color = .clear
         annotation.fontColor = .labelColor
         annotation.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.24)
         addAnnotations([(page, annotation)], select: annotation)
+        setTool(.select)
+        beginInlineEdit(annotation, on: page)
     }
 
     private func addArrowTextBox(at viewPoint: NSPoint? = nil) {
@@ -535,12 +545,14 @@ final class DocumentWindowController: NSWindowController {
         line.endLineStyle = .closedArrow
 
         let text = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)
-        text.contents = "대체/설명 입력"
+        text.contents = ""
         text.font = .systemFont(ofSize: 13)
         text.color = .clear
         text.fontColor = .labelColor
         text.backgroundColor = NSColor.systemRed.withAlphaComponent(0.12)
         addAnnotations([(page, line), (page, text)], select: text)
+        setTool(.select)
+        beginInlineEdit(text, on: page)
     }
 
     private func addSelectedTextNote() {
@@ -614,6 +626,7 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private func addAnnotations(_ annotations: [(PDFPage, PDFAnnotation)], select annotationToSelect: PDFAnnotation?) {
+        finishInlineEdit()
         for (page, annotation) in annotations {
             page.addAnnotation(annotation)
         }
@@ -646,6 +659,7 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc private func saveAPIKey(_ sender: Any?) {
+        finishInlineEdit()
         do {
             try KeychainStore.saveAPIKey(apiKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
             statusLabel.stringValue = "API 키가 Keychain에 저장되었습니다."
@@ -663,6 +677,7 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc private func runCorrection(_ sender: Any?) {
+        finishInlineEdit()
         guard let document = pdfView.document else { return }
         updateSettings(nil)
         statusLabel.stringValue = "맞춤법 검사 중..."
@@ -737,6 +752,9 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private func selectAnnotation(_ annotation: PDFAnnotation, on page: PDFPage) {
+        if inlineEditingAnnotation !== annotation {
+            finishInlineEdit()
+        }
         selectedAnnotation = annotation
         selectedAnnotationPage = page
         pdfView.go(to: page)
@@ -763,11 +781,11 @@ final class DocumentWindowController: NSWindowController {
             tableViewSelectionDidChange(Notification(name: NSTableView.selectionDidChangeNotification, object: annotationTable))
         }
         guard let annotation = selectedAnnotation, let page = selectedAnnotationPage else { return }
-        selectAnnotation(annotation, on: page)
-        window?.makeFirstResponder(selectedCommentEditor)
+        edit(annotation, on: page)
     }
 
     @objc private func saveSelectedAnnotationNote(_ sender: Any?) {
+        finishInlineEdit()
         guard let annotation = selectedAnnotation, let page = selectedAnnotationPage else { return }
         annotation.contents = selectedCommentEditor.string.trimmingCharacters(in: .whitespacesAndNewlines)
         if annotation.type == "FreeText" {
@@ -779,6 +797,7 @@ final class DocumentWindowController: NSWindowController {
     }
 
     @objc private func deleteSelectedAnnotation(_ sender: Any?) {
+        finishInlineEdit()
         guard let annotation = selectedAnnotation, let page = selectedAnnotationPage else { return }
         page.removeAnnotation(annotation)
         undoStack.append(.remove([(page, annotation)]))
@@ -788,17 +807,16 @@ final class DocumentWindowController: NSWindowController {
     }
 
     private func edit(_ annotation: PDFAnnotation, on page: PDFPage) {
-        let current = annotation.contents ?? ""
-        let value = prompt("주석 수정", message: "주석 내용을 수정합니다.", defaultValue: current)
-        annotation.contents = value
         if annotation.type == "FreeText" {
-            annotation.font = .systemFont(ofSize: 13)
+            beginInlineEdit(annotation, on: page)
+        } else {
+            selectAnnotation(annotation, on: page)
+            window?.makeFirstResponder(selectedCommentEditor)
         }
-        selectAnnotation(annotation, on: page)
-        refreshAnnotationList()
     }
 
     private func undoLastAction() {
+        finishInlineEdit()
         guard let action = undoStack.popLast() else { return }
         switch action {
         case .add(let annotations):
@@ -826,6 +844,69 @@ final class DocumentWindowController: NSWindowController {
         selectedCommentTitle.stringValue = "\(pageIndex)쪽 · \(item.typeText)"
         selectedCommentTitle.textColor = .labelColor
         selectedCommentEditor.string = annotation.contents ?? ""
+    }
+
+    private func setupInlineEditor() {
+        inlineEditorScrollView.hasVerticalScroller = true
+        inlineEditorScrollView.borderType = .lineBorder
+        inlineEditorScrollView.drawsBackground = true
+        inlineEditorScrollView.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.96)
+        inlineEditorScrollView.isHidden = true
+        inlineEditorScrollView.translatesAutoresizingMaskIntoConstraints = true
+
+        inlineEditorTextView.font = .systemFont(ofSize: 13)
+        inlineEditorTextView.isRichText = false
+        inlineEditorTextView.allowsUndo = true
+        inlineEditorTextView.delegate = self
+        inlineEditorScrollView.documentView = inlineEditorTextView
+        pdfView.addSubview(inlineEditorScrollView)
+    }
+
+    private func beginInlineEdit(_ annotation: PDFAnnotation, on page: PDFPage) {
+        guard annotation.type == "FreeText" else {
+            selectAnnotation(annotation, on: page)
+            window?.makeFirstResponder(selectedCommentEditor)
+            return
+        }
+        selectAnnotation(annotation, on: page)
+        inlineEditingAnnotation = annotation
+        inlineEditingPage = page
+        inlineEditorTextView.string = annotation.contents ?? ""
+        inlineEditorScrollView.frame = inlineEditorFrame(for: annotation, on: page)
+        inlineEditorScrollView.isHidden = false
+        inlineEditorTextView.selectAll(nil)
+        window?.makeFirstResponder(inlineEditorTextView)
+        statusLabel.stringValue = "텍스트 박스 편집 중"
+    }
+
+    private func finishInlineEdit() {
+        guard let annotation = inlineEditingAnnotation else { return }
+        let value = inlineEditorTextView.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty, let page = inlineEditingPage {
+            page.removeAnnotation(annotation)
+            if selectedAnnotation === annotation {
+                selectedAnnotation = nil
+                selectedAnnotationPage = nil
+            }
+        } else {
+            annotation.contents = value
+            annotation.font = .systemFont(ofSize: 13)
+        }
+        inlineEditingAnnotation = nil
+        inlineEditingPage = nil
+        inlineEditorScrollView.isHidden = true
+        pdfView.setNeedsDisplay(pdfView.bounds)
+        refreshAnnotationList()
+    }
+
+    private func inlineEditorFrame(for annotation: PDFAnnotation, on page: PDFPage) -> NSRect {
+        var frame = pdfView.convert(annotation.bounds, from: page)
+        frame = frame.insetBy(dx: -3, dy: -3)
+        frame.size.width = max(frame.width, 160)
+        frame.size.height = max(frame.height, 48)
+        frame.origin.x = max(0, min(frame.origin.x, pdfView.bounds.width - frame.width))
+        frame.origin.y = max(0, min(frame.origin.y, pdfView.bounds.height - frame.height))
+        return frame
     }
 
     private func centeredBounds(on page: PDFPage) -> NSRect {
@@ -884,6 +965,7 @@ extension DocumentWindowController: AnnotatingPDFViewDelegate {
             addArrowTextBox(at: viewPoint)
             return true
         default:
+            finishInlineEdit()
             selectedAnnotation = nil
             selectedAnnotationPage = nil
             syncTableSelection()
@@ -901,6 +983,14 @@ extension DocumentWindowController: AnnotatingPDFViewDelegate {
 
     fileprivate func pdfViewDidRequestEditSelected(_ pdfView: AnnotatingPDFView) {
         editSelectedAnnotation(nil)
+    }
+}
+
+extension DocumentWindowController: NSTextViewDelegate {
+    func textDidEndEditing(_ notification: Notification) {
+        if notification.object as AnyObject? === inlineEditorTextView {
+            finishInlineEdit()
+        }
     }
 }
 
