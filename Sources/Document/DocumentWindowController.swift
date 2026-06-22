@@ -197,6 +197,8 @@ private final class AnnotationCellView: NSTableCellView {
         summaryField.maximumNumberOfLines = 1
         summaryField.isBordered = false
         summaryField.isBezeled = false
+        summaryField.drawsBackground = false
+        summaryField.backgroundColor = .clear
         summaryField.focusRingType = .none
         summaryField.translatesAutoresizingMaskIntoConstraints = false
 
@@ -234,23 +236,27 @@ private final class AnnotationCellView: NSTableCellView {
         target: AnyObject?,
         action: Selector
     ) {
-        container.layer?.backgroundColor = (isSelected
+        container.layer?.backgroundColor = (isEditing
+            ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.10)
+            : isSelected
             ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.14)
             : NSColor.controlBackgroundColor).cgColor
-        container.layer?.borderWidth = isSelected ? 2 : 0
+        container.layer?.borderWidth = isEditing ? 2 : (isSelected ? 2 : 0)
         container.layer?.borderColor = NSColor.selectedContentBackgroundColor.cgColor
 
         pageBadge.stringValue = item.pageText
         pageBadge.layer?.backgroundColor = (item.typeText == "AI" ? NSColor.systemRed : NSColor.systemBlue).cgColor
-        typeField.stringValue = item.typeText
+        typeField.stringValue = isEditing ? "\(item.typeText) · 수정 중" : item.typeText
 
-        summaryField.stringValue = item.annotation.contents ?? ""
+        let rawValue = item.annotation.contents?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        summaryField.stringValue = isEditing ? rawValue : item.summary
         summaryField.placeholderString = item.summary
-        summaryField.textColor = isSelected ? .labelColor : .secondaryLabelColor
+        summaryField.textColor = isEditing || isSelected ? .labelColor : .secondaryLabelColor
         summaryField.isEditable = isEditing
         summaryField.isSelectable = true
-        summaryField.drawsBackground = isEditing
-        summaryField.backgroundColor = isEditing ? NSColor.textBackgroundColor.withAlphaComponent(0.75) : .clear
+        summaryField.drawsBackground = false
+        summaryField.backgroundColor = .clear
+        summaryField.lineBreakMode = isEditing ? .byClipping : .byTruncatingTail
         summaryField.delegate = delegate
         summaryField.target = target
         summaryField.action = action
